@@ -123,6 +123,34 @@ npm run build
 
 The output will be written to `dist/`.
 
+## Deployment
+
+The app can be deployed in two modes:
+
+- Demo mode: deploy without Supabase environment variables. Auth, cloud history, and remote report persistence stay disabled, while local analysis and exports remain available.
+- Supabase mode: set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the hosting provider environment. `VITE_SUPABASE_ANON_KEY` is supported as a fallback.
+
+Build command:
+
+```bash
+npm run build
+```
+
+Publish directory:
+
+```bash
+dist
+```
+
+## Smoke QA Checklist
+
+- 3D Simulation: open the app, confirm the machine scene renders, and switch fault profiles.
+- Spectrum Analysis: enter at least one valid peak and confirm diagnosis results update.
+- AI Upload: upload a spectrum or waveform image and confirm extraction/result states are understandable.
+- Equipment Dashboard: open the dashboard and confirm equipment rows, filters, and priority cards render.
+- Exports: generate a PDF report and Excel export from a fresh browser session.
+- Supabase fallback: run without env variables and confirm the app stays usable in demo mode.
+
 ## License
 
 No license file is currently included in this project.

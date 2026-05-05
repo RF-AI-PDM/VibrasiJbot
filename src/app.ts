@@ -100,6 +100,7 @@ let controllers: AppControllers | null = null;
 let authBootstrapped = false;
 let pendingUploadPreset: Partial<UploadedAsset> | null = null;
 let visualsLoadPromise: Promise<void> | null = null;
+let toastTimer = 0;
 
 function qs<T extends Element>(selector: string, scope: ParentNode = document): T | null {
   return scope.querySelector(selector) as T | null;
@@ -1494,8 +1495,23 @@ function renderShell(state: AppState): string {
           ${renderReferenceView()}
         </div>
       </main>
+      <div id="appToast" class="toast" role="status" aria-live="polite"></div>
     </div>
   `;
+}
+
+function showToast(message: string, tone: 'info' | 'warning' | 'error' = 'warning'): void {
+  const toast = qs<HTMLElement>('#appToast');
+  if (!toast) {
+    return;
+  }
+
+  window.clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.className = `toast toast--${tone} is-visible`;
+  toastTimer = window.setTimeout(() => {
+    toast.classList.remove('is-visible');
+  }, 4200);
 }
 
 function syncSidebar(): void {
@@ -1856,7 +1872,7 @@ function analyzeSpectrum(): void {
     .filter((peak) => Number.isFinite(peak.freq) && Number.isFinite(peak.amp));
 
   if (!peaks.length) {
-    window.alert('Masukkan minimal satu peak.');
+    showToast('Masukkan minimal satu peak untuk menjalankan analisis spectrum.', 'warning');
     return;
   }
 
@@ -2156,7 +2172,7 @@ async function extractAllUploads(render = true): Promise<void> {
 function applyExtractedPeaks(): void {
   const rows = mergeExtractedPeaksToRows(state.uploadedAssets);
   if (!rows.length) {
-    window.alert('Belum ada peak hasil ekstraksi. Klik Extract Photo atau koreksi kalibrasi dulu.');
+    showToast('Belum ada peak hasil ekstraksi. Klik Extract Photo atau koreksi kalibrasi dulu.', 'warning');
     return;
   }
 
@@ -2353,7 +2369,7 @@ function downloadText(fileName: string, text: string, type: string): void {
 
 async function startAIAnalysis(): Promise<void> {
   if (!state.uploadedAssets.length) {
-    window.alert('Upload minimal satu image spectrum atau waveform terlebih dahulu.');
+    showToast('Upload minimal satu image spectrum atau waveform terlebih dahulu.', 'warning');
     return;
   }
 
@@ -2628,7 +2644,7 @@ async function signInWithEmail(): Promise<void> {
   const email = qs<HTMLInputElement>('#authEmail')?.value.trim() ?? '';
   const password = qs<HTMLInputElement>('#authPassword')?.value ?? '';
   if (!email || !password) {
-    window.alert('Masukkan email dan password untuk login Supabase.');
+    showToast('Masukkan email dan password untuk login Supabase.', 'warning');
     return;
   }
 
