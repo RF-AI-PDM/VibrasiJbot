@@ -1,0 +1,2 @@
+# VibrasiJbot
+Analysa Vibration Analysis
