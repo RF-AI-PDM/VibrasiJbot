@@ -1,0 +1,2015 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mobius Vibration 3D Simulator Pro</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e1a;--card:#111827;--border:#1e293b;--blue:#3b82f6;--green:#10b981;--red:#ef4444;--yellow:#eab308;--purple:#8b5cf6;--cyan:#06b6d4;--orange:#f97316}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:#e2e8f0;overflow-x:hidden}
+.mono{font-family:'JetBrains Mono',monospace}
+.glass{background:rgba(17,24,39,0.85);backdrop-filter:blur(20px);border:1px solid rgba(30,41,59,0.8)}
+.glow-blue{box-shadow:0 0 20px rgba(59,130,246,0.3)}
+.glow-green{box-shadow:0 0 20px rgba(16,185,129,0.3)}
+.glow-red{box-shadow:0 0 20px rgba(239,68,68,0.3)}
+.glow-purple{box-shadow:0 0 20px rgba(139,92,246,0.3)}
+.glow-cyan{box-shadow:0 0 20px rgba(6,182,212,0.3)}
+.chart-label{position:absolute;top:8px;left:12px;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;z-index:10;pointer-events:none}
+.tab-active{background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff;border-color:transparent}
+.btn-fault{transition:all 0.2s;position:relative;overflow:hidden}
+.btn-fault:hover{transform:translateY(-1px);border-color:var(--blue)}
+.btn-fault.active{background:linear-gradient(135deg,var(--blue),#2563eb);border-color:var(--blue);color:#fff;box-shadow:0 0 15px rgba(59,130,246,0.4)}
+.btn-fault.active::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.1),transparent);animation:shimmer 2s infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.upload-zone{border:2px dashed var(--border);transition:all 0.3s}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--purple);background:rgba(139,92,246,0.05)}
+.progress-ring{animation:spin 1s linear infinite}
+@keyframes spin{100%{transform:rotate(360deg)}}
+.result-card{animation:slideUp 0.4s ease-out}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.iso-zone{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden}
+.iso-zone div{flex:1}
+.severity-a{background:var(--green)}
+.severity-b{background:#22c55e}
+.severity-c{background:var(--yellow)}
+.severity-d{background:var(--red)}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.pulse-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.pulse-dot.green{background:var(--green);box-shadow:0 0 8px var(--green)}
+.pulse-dot.yellow{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.pulse-dot.red{background:var(--red);box-shadow:0 0 8px var(--red);animation:blink 1s infinite}
+.pulse-dot.orange{background:var(--orange);box-shadow:0 0 8px var(--orange)}
+@keyframes blink{50%{opacity:0.4}}
+.fallback-3d{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#94a3b8;background:linear-gradient(135deg,rgba(30,41,59,.45),rgba(15,23,42,.75))}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);z-index:100;display:none;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.waterfall-bg{background:radial-gradient(ellipse at 20% 50%,rgba(59,130,246,0.08) 0%,transparent 50%),radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 50%),var(--bg)}
+</style>
+</head>
+<body class="waterfall-bg min-h-screen">
+
+<!-- Header -->
+<header class="glass sticky top-0 z-50 px-4 py-3 border-b border-gray-800">
+<div class="max-w-[1800px] mx-auto flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-black text-lg glow-blue">M</div>
+<div>
+<h1 class="text-lg font-bold tracking-tight">MOBIUS <span class="text-blue-400">VIBRATION</span> SIMULATOR</h1>
+<p class="text-[10px] text-gray-500 font-medium tracking-widest uppercase">3D Analysis & Diagnostic System v3.0</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800/50 border border-gray-700">
+<span class="pulse-dot green"></span>
+<span class="text-xs font-semibold text-gray-300" id="statusText">SYSTEM NORMAL</span>
+</div>
+<div class="text-right">
+<div class="text-[10px] text-gray-500 uppercase tracking-wider">RPM</div>
+<div class="mono text-sm font-bold text-blue-400" id="rpmDisplay">1470</div>
+</div>
+<div class="text-right">
+<div class="text-[10px] text-gray-500 uppercase tracking-wider">LOAD</div>
+<div class="mono text-sm font-bold text-green-400" id="loadDisplay">80%</div>
+</div>
+<div class="text-right">
+<div class="text-[10px] text-gray-500 uppercase tracking-wider">OVERALL</div>
+<div class="mono text-sm font-bold" id="overallDisplay">2.4 mm/s</div>
+</div>
+</div>
+</div>
+</header>
+
+<!-- Navigation Tabs -->
+<nav class="max-w-[1800px] mx-auto px-4 pt-3">
+<div class="flex gap-2">
+<button class="px-5 py-2 rounded-lg text-xs font-semibold tab-active" onclick="switchTab('sim')">⚡ 3D Simulation</button>
+<button class="px-5 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-gray-400 hover:text-white transition" onclick="switchTab('analysis')">📊 Spectrum Analysis</button>
+<button class="px-5 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-gray-400 hover:text-white transition" onclick="switchTab('ai')">🤖 AI Photo Diagnosis</button>
+<button class="px-5 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-gray-400 hover:text-white transition" onclick="switchTab('equipment')">🏭 Equipment Data</button>
+<button class="px-5 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-gray-400 hover:text-white transition" onclick="switchTab('reference')">📚 Reference</button>
+</div>
+</nav>
+
+<!-- Main Content -->
+<main class="max-w-[1800px] mx-auto px-4 py-3 flex gap-3">
+
+<!-- LEFT PANEL: Controls -->
+<aside class="w-72 flex-shrink-0 space-y-3">
+<!-- Parameter Machine -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-blue-500 rounded-full"></span>Parameter Machine
+</h3>
+<div class="space-y-3">
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-gray-500">Speed (RPM)</span>
+<span class="mono text-blue-400" id="rpmVal">1470</span>
+</div>
+<input type="range" id="rpmSlider" min="300" max="3600" value="1470" class="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-blue-500" oninput="updateParam('rpm',this.value)">
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-gray-500">Load (%)</span>
+<span class="mono text-green-400" id="loadVal">80</span>
+</div>
+<input type="range" id="loadSlider" min="0" max="100" value="80" class="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer accent-green-500" oninput="updateParam('load',this.value)">
+</div>
+</div>
+</div>
+
+<!-- Direction -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-purple-500 rounded-full"></span>Direction Measurement
+</h3>
+<div class="grid grid-cols-3 gap-2">
+<button class="btn-fault active px-2 py-2 rounded-lg text-xs font-semibold border border-gray-600 text-center" onclick="setDirection('radial',this)" id="dirRadial">
+<div class="text-lg mb-0.5">↕</div>Radial
+</button>
+<button class="btn-fault px-2 py-2 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setDirection('axial',this)" id="dirAxial">
+<div class="text-lg mb-0.5">↔</div>Axial
+</button>
+<button class="btn-fault px-2 py-2 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setDirection('both',this)" id="dirBoth">
+<div class="text-lg mb-0.5">⊕</div>Both
+</button>
+</div>
+</div>
+
+<!-- Fault Selection -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-red-500 rounded-full"></span>Fault Simulation
+</h3>
+<div class="grid grid-cols-2 gap-2" id="faultGrid">
+<button class="btn-fault active px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-center" onclick="setFault('normal',this)">
+<div class="text-sm mb-0.5">✅</div>Normal
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('unbalance',this)">
+<div class="text-sm mb-0.5">⚖️</div>Unbalance
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('misalignment',this)">
+<div class="text-sm mb-0.5">🔧</div>Misalign
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('looseness',this)">
+<div class="text-sm mb-0.5">🔩</div>Looseness
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('bearing',this)">
+<div class="text-sm mb-0.5">⚙️</div>Bearing
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('resonance',this)">
+<div class="text-sm mb-0.5">📈</div>Resonance
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('cavitation',this)">
+<div class="text-sm mb-0.5">💨</div>Cavitation
+</button>
+<button class="btn-fault px-3 py-2.5 rounded-lg text-xs font-semibold border border-gray-600 text-gray-400 text-center" onclick="setFault('electrical',this)">
+<div class="text-sm mb-0.5">⚡</div>Electrical
+</button>
+</div>
+</div>
+
+<!-- Bearing Calculator -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-cyan-500 rounded-full"></span>Bearing Calculator
+</h3>
+<div class="space-y-2">
+<input type="text" id="bearingModel" placeholder="e.g. 6205, SKF 6305" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none" oninput="calcBearing()">
+<div class="grid grid-cols-2 gap-2 text-[10px]" id="bearingResults">
+<div class="bg-gray-800/50 rounded p-2"><span class="text-gray-500">BPFO</span><div class="mono text-cyan-400 font-bold" id="bpfoVal">-</div></div>
+<div class="bg-gray-800/50 rounded p-2"><span class="text-gray-500">BPFI</span><div class="mono text-cyan-400 font-bold" id="bpfiVal">-</div></div>
+<div class="bg-gray-800/50 rounded p-2"><span class="text-gray-500">FTF</span><div class="mono text-cyan-400 font-bold" id="ftfVal">-</div></div>
+<div class="bg-gray-800/50 rounded p-2"><span class="text-gray-500">BSF</span><div class="mono text-cyan-400 font-bold" id="bsfVal">-</div></div>
+</div>
+</div>
+</div>
+
+<!-- ISO Severity -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-yellow-500 rounded-full"></span>ISO 10816 Severity
+</h3>
+<div class="iso-zone mb-2">
+<div class="severity-a"></div>
+<div class="severity-b"></div>
+<div class="severity-c"></div>
+<div class="severity-d"></div>
+</div>
+<div class="flex justify-between text-[10px] text-gray-500">
+<span>Good</span><span>OK</span><span>Alert</span><span>Danger</span>
+</div>
+<div class="mt-2 text-center">
+<div class="mono text-2xl font-bold" id="severityValue">2.4</div>
+<div class="text-[10px] text-gray-500">mm/s RMS Velocity</div>
+<div class="mt-1 inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400" id="severityZone">ZONE A</div>
+</div>
+</div>
+</aside>
+
+<!-- CENTER: 3D + Charts -->
+<section class="flex-1 space-y-3" id="simView">
+<!-- 3D Viewport -->
+<div class="glass rounded-xl overflow-hidden relative" style="height:320px">
+<div class="chart-label text-blue-400 bg-blue-500/10 border border-blue-500/30">3D Machine Visualization</div>
+<div id="canvas3d" class="w-full h-full"></div>
+<!-- 3D Controls -->
+<div class="absolute bottom-3 left-3 flex gap-2">
+<button class="px-3 py-1.5 bg-gray-800/80 hover:bg-gray-700 rounded text-[10px] text-gray-300 border border-gray-600 transition" onclick="resetCamera()">Reset View</button>
+<button class="px-3 py-1.5 bg-gray-800/80 hover:bg-gray-700 rounded text-[10px] text-gray-300 border border-gray-600 transition" onclick="toggleWireframe()">Wireframe</button>
+</div>
+<!-- Live indicators -->
+<div class="absolute top-3 right-3 space-y-1.5">
+<div class="flex items-center gap-2 px-2 py-1 bg-gray-900/80 rounded text-[10px]">
+<div class="w-2 h-2 rounded-full bg-red-500"></div>
+<span class="text-gray-400">Axial</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-1 bg-gray-900/80 rounded text-[10px]">
+<div class="w-2 h-2 rounded-full bg-green-500"></div>
+<span class="text-gray-400">Radial</span>
+</div>
+<div class="flex items-center gap-2 px-2 py-1 bg-gray-900/80 rounded text-[10px]">
+<div class="w-2 h-2 rounded-full bg-yellow-500"></div>
+<span class="text-gray-400">Tangential</span>
+</div>
+</div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid grid-cols-2 gap-3" style="height:200px">
+<!-- Time Waveform -->
+<div class="glass rounded-xl overflow-hidden relative">
+<div class="chart-label text-cyan-400 bg-cyan-500/10 border border-cyan-500/30">Time Waveform</div>
+<canvas id="waveCanvas" class="w-full h-full"></canvas>
+</div>
+<!-- FFT Spectrum -->
+<div class="glass rounded-xl overflow-hidden relative">
+<div class="chart-label text-purple-400 bg-purple-500/10 border border-purple-500/30">FFT Spectrum (Orders)</div>
+<canvas id="fftCanvas" class="w-full h-full"></canvas>
+</div>
+</div>
+
+<!-- Phase & Orbit -->
+<div class="grid grid-cols-2 gap-3" style="height:180px">
+<!-- Phase Diagram -->
+<div class="glass rounded-xl overflow-hidden relative">
+<div class="chart-label text-orange-400 bg-orange-500/10 border border-orange-500/30">Phase Diagram</div>
+<canvas id="phaseCanvas" class="w-full h-full"></canvas>
+</div>
+<!-- Orbit -->
+<div class="glass rounded-xl overflow-hidden relative">
+<div class="chart-label text-green-400 bg-green-500/10 border border-green-500/30">Shaft Orbit</div>
+<canvas id="orbitCanvas" class="w-full h-full"></canvas>
+</div>
+</div>
+</section>
+
+<!-- AI Analysis View (hidden by default) -->
+<section class="flex-1 space-y-3 hidden" id="analysisView">
+<div class="glass rounded-xl p-6">
+<h2 class="text-lg font-bold mb-4">📊 Input Data Spectrum</h2>
+<div class="grid grid-cols-3 gap-4 mb-4">
+<div>
+<label class="text-xs text-gray-500 block mb-1">RPM Machine</label>
+<input type="number" id="analysisRpm" value="1470" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+</div>
+<div>
+<label class="text-xs text-gray-500 block mb-1">Direction</label>
+<select id="analysisDir" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+<option value="radial">Radial (V/H)</option>
+<option value="axial">Axial</option>
+</select>
+</div>
+<div>
+<label class="text-xs text-gray-500 block mb-1">Machine Type</label>
+<select class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+<option>Pump (15-75kW)</option>
+<option>Motor (>75kW)</option>
+<option>Fan/Blower</option>
+<option>Compressor</option>
+<option>Generator</option>
+</select>
+</div>
+</div>
+<!-- Peak Entry -->
+<div class="mb-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Input Spectrum Peaks</h3>
+<div id="peakList" class="space-y-2 max-h-60 overflow-y-auto"></div>
+<button class="mt-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 border border-gray-600 transition" onclick="addPeakRow()">+ Tambah Peak</button>
+</div>
+<button class="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl text-sm font-bold transition glow-blue" onclick="analyzeSpectrum()">🔍 Analisa & Diagnose</button>
+</div>
+<!-- Results -->
+<div id="analysisResults" class="glass rounded-xl p-6 hidden">
+<h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Hasil Diagnosis</h3>
+<div id="resultsList" class="space-y-3"></div>
+</div>
+</section>
+
+<!-- AI Photo View (hidden by default) -->
+<section class="flex-1 space-y-3 hidden" id="aiView">
+<div class="glass rounded-xl p-6 text-center">
+<h2 class="text-lg font-bold mb-2">🤖 AI Photo Spectrum & Waveform Diagnosis</h2>
+<p class="text-sm text-gray-500 mb-6">Upload beberapa foto spectrum/waveform dari analyzer apa pun, lalu mapping ke Bearing 1, 2, 3, dan 4.</p>
+
+<div id="uploadZone" class="upload-zone rounded-2xl p-10 cursor-pointer" onclick="document.getElementById('photoInput').click()">
+<div class="flex flex-col items-center gap-4">
+<div class="w-16 h-16 rounded-2xl bg-purple-500/10 flex items-center justify-center">
+<svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+</div>
+<div>
+<p class="text-gray-300 font-semibold">Klik untuk upload beberapa file atau drag & drop</p>
+<p class="text-xs text-gray-500 mt-1">Mendukung PNG, JPG, BMP, GIF • bisa campur Spectrum dan Waveform</p>
+</div>
+</div>
+<input type="file" id="photoInput" accept="image/*" multiple class="hidden" onchange="handlePhotoUpload(this)">
+</div>
+
+<div id="photoPreview" class="hidden mt-6 text-left">
+<div class="flex items-center justify-between gap-3 mb-3">
+  <div>
+    <h3 class="text-sm font-bold text-gray-300">Uploaded Data</h3>
+    <p class="text-xs text-gray-500">Setiap image dapat diberi tipe data dan lokasi bearing.</p>
+  </div>
+  <div class="flex gap-2">
+    <button class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 border border-gray-600 transition" onclick="document.getElementById('photoInput').click()">+ Tambah File</button>
+    <button class="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-xs text-red-300 border border-red-500/40 transition" onclick="removePhoto()">Clear All</button>
+  </div>
+</div>
+<div id="uploadSummary" class="grid grid-cols-4 gap-2 mb-4"></div>
+<div id="previewGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+<div class="mt-4 flex gap-3 justify-center">
+<button class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-xl text-sm font-bold transition glow-purple" onclick="startAIAnalysis()">🚀 Analisa Semua Image</button>
+</div>
+</div>
+</div>
+
+<!-- AI Result -->
+<div id="aiResult" class="hidden">
+<div class="glass rounded-xl p-6">
+<div id="aiScanProgress" class="text-center py-8">
+<div class="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full progress-ring mx-auto mb-4"></div>
+<p class="text-gray-300 font-semibold" id="scanText">Initializing AI...</p>
+<div class="w-64 h-2 bg-gray-800 rounded-full mx-auto mt-4 overflow-hidden">
+<div class="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all duration-300" id="scanProgress" style="width:0%"></div>
+</div>
+</div>
+<div id="aiResultContent" class="hidden">
+<div class="flex items-start gap-6">
+<div class="flex-1">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center text-xl">✅</div>
+<div>
+<h3 class="font-bold text-lg">Analysis selesai</h3>
+<p class="text-xs text-gray-500">Multi Image Diagnostic Engine</p>
+</div>
+</div>
+<div class="bg-gray-800/50 rounded-xl p-4 mb-4">
+<div class="flex justify-between items-center mb-3">
+<span class="text-sm text-gray-400">Detected Fault</span>
+<span class="text-2xl font-bold text-green-400" id="aiConfidence">94%</span>
+</div>
+<div class="text-lg font-bold text-white mb-1" id="aiFaultName">-</div>
+<p class="text-sm text-gray-400" id="aiFaultDesc">-</p>
+</div>
+<div class="space-y-2" id="aiEvidence"></div>
+<div class="mt-4">
+<h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Bearing Coverage</h4>
+<div id="bearingCoverage" class="grid grid-cols-4 gap-2"></div>
+</div>
+</div>
+<div class="w-64 space-y-3">
+<button class="w-full py-3 bg-green-600 hover:bg-green-500 rounded-xl text-sm font-bold transition" onclick="applyAIResult()">Terapkan ke Simulator</button>
+<button class="w-full py-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-xs text-gray-400 border border-gray-600 transition" onclick="resetAI()">Analisa Baru</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+
+<!-- Equipment Data View (hidden) -->
+<section class="flex-1 space-y-3 hidden" id="equipmentView">
+  <div class="glass rounded-xl p-6">
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <div>
+        <h2 class="text-lg font-bold mb-1">🏭 Equipment Unit Data</h2>
+        <p class="text-sm text-gray-500" id="eqDatasetDesc">Pilih tanggal, bulan, dan tahun untuk menampilkan dataset vibration equipment yang tersedia.</p>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] text-gray-500 uppercase tracking-wider">Total Equipment</div>
+        <div class="mono text-2xl font-bold text-blue-400" id="eqTotal">0</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-6 gap-3 mb-4">
+      <div>
+        <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Tanggal</label>
+        <select id="eqDateDay" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white" onchange="changeEquipmentDataset()"></select>
+      </div>
+      <div>
+        <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Bulan</label>
+        <select id="eqDateMonth" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white" onchange="changeEquipmentDataset()"></select>
+      </div>
+      <div>
+        <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Tahun</label>
+        <select id="eqDateYear" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white" onchange="changeEquipmentDataset()"></select>
+      </div>
+      <div class="col-span-3 bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3">
+        <div class="text-[10px] text-gray-500 uppercase tracking-wider">Dataset Aktif</div>
+        <div class="text-sm font-bold text-white" id="eqActiveDataset">-</div>
+        <div class="text-[11px] text-gray-500 mt-0.5" id="eqDatasetSource">-</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-5 gap-3 mb-4" id="eqCards"></div>
+
+    <div class="grid grid-cols-4 gap-3 mb-4">
+      <select id="eqUnitFilter" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white" onchange="renderEquipment()"></select>
+      <select id="eqStatusFilter" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white" onchange="renderEquipment()">
+        <option value="ALL">Semua Status</option>
+        <option value="ALARM">ALARM</option>
+        <option value="WARNING">WARNING</option>
+        <option value="PREWARNING">PREWARNING</option>
+        <option value="NORMAL">NORMAL</option>
+        <option value="STAND BY">STAND BY</option>
+      </select>
+      <input id="eqSearch" class="col-span-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500" placeholder="Cari equipment, contoh: CWP, Fan, Pump, Crusher" oninput="renderEquipment()">
+    </div>
+
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="glass rounded-xl p-4 col-span-2">
+        <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Top Equipment by VIB MAX</div>
+        <canvas id="eqBarCanvas" height="170"></canvas>
+      </div>
+      <div class="glass rounded-xl p-4">
+        <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Action Priority</div>
+        <div id="eqPriority" class="space-y-2 text-xs"></div>
+      </div>
+    </div>
+
+    <div class="overflow-auto max-h-[420px] rounded-xl border border-gray-800">
+      <table class="w-full text-xs">
+        <thead class="sticky top-0 bg-gray-900 text-gray-400 uppercase tracking-wider">
+          <tr>
+            <th class="text-left p-2">Unit</th><th class="text-left p-2">Equipment</th><th class="text-left p-2">Group</th>
+            <th class="text-right p-2">VIB MAX</th><th class="text-left p-2">Status</th><th class="text-left p-2">Highest Point</th><th class="text-left p-2">Rekomendasi</th>
+          </tr>
+        </thead>
+        <tbody id="eqTable"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Reference View (hidden) -->
+<section class="flex-1 space-y-3 hidden" id="referenceView">
+<div class="glass rounded-xl p-6">
+<h2 class="text-lg font-bold mb-4">📚 Mobius Diagnostic Reference Guide</h2>
+<div class="grid grid-cols-2 gap-4" id="refGrid"></div>
+</div>
+</section>
+
+<!-- RIGHT PANEL: Diagnosis -->
+<aside class="w-80 flex-shrink-0 space-y-3">
+<!-- Live Diagnosis -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-red-500 rounded-full"></span>Live Diagnosis
+</h3>
+<div id="diagPanel" class="space-y-2">
+<div class="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+<div class="flex items-center gap-2 mb-1">
+<div class="pulse-dot green"></div>
+<span class="text-sm font-bold text-green-400">Normal Operation</span>
+</div>
+<p class="text-xs text-gray-400 leading-relaxed">Semua vibration level berada dalam acceptable limits ISO 10816-3 Zone A. Tidak ada abnormal spectral pattern terdeteksi.</p>
+</div>
+</div>
+</div>
+
+<!-- Spectral Peaks -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-purple-500 rounded-full"></span>Peak Analysis
+</h3>
+<div id="peakAnalysis" class="space-y-1.5">
+<div class="flex justify-between items-center py-1.5 border-b border-gray-800">
+<span class="text-xs text-gray-500">1X (1st Order)</span>
+<span class="mono text-xs font-bold text-gray-400" id="peak1X">0.24 mm/s</span>
+</div>
+<div class="flex justify-between items-center py-1.5 border-b border-gray-800">
+<span class="text-xs text-gray-500">2X (2nd Order)</span>
+<span class="mono text-xs font-bold text-gray-400" id="peak2X">0.08 mm/s</span>
+</div>
+<div class="flex justify-between items-center py-1.5 border-b border-gray-800">
+<span class="text-xs text-gray-500">3X (3rd Order)</span>
+<span class="mono text-xs font-bold text-gray-400" id="peak3X">0.03 mm/s</span>
+</div>
+<div class="flex justify-between items-center py-1.5 border-b border-gray-800">
+<span class="text-xs text-gray-500">4X</span>
+<span class="mono text-xs font-bold text-gray-400" id="peak4X">0.01 mm/s</span>
+</div>
+<div class="flex justify-between items-center py-1.5 border-b border-gray-800">
+<span class="text-xs text-gray-500">Max Peak</span>
+<span class="mono text-xs font-bold text-blue-400" id="peakMax">0.24 mm/s</span>
+</div>
+</div>
+</div>
+
+<!-- Rekomendasi -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-yellow-500 rounded-full"></span>Rekomendasi
+</h3>
+<div id="recommendations" class="space-y-2">
+<div class="flex items-start gap-2 py-2">
+<span class="text-green-400 mt-0.5">✓</span>
+<span class="text-xs text-gray-400">Lanjutkan routine monitoring setiap 3 bulan</span>
+</div>
+<div class="flex items-start gap-2 py-2">
+<span class="text-green-400 mt-0.5">✓</span>
+<span class="text-xs text-gray-400">Vibration level stabil - trending acceptable</span>
+</div>
+</div>
+</div>
+
+<!-- Data Machine -->
+<div class="glass rounded-xl p-4">
+<h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+<span class="w-1 h-3 bg-blue-500 rounded-full"></span>Data Machine
+</h3>
+<div class="space-y-2 text-xs">
+<div class="flex justify-between"><span class="text-gray-500">Type</span><span class="text-gray-300">Centrifugal Pump</span></div>
+<div class="flex justify-between"><span class="text-gray-500">Power</span><span class="text-gray-300">45 kW</span></div>
+<div class="flex justify-between"><span class="text-gray-500">Speed</span><span class="mono text-gray-300" id="infoRpm">1470 RPM</span></div>
+<div class="flex justify-between"><span class="text-gray-500">Bearing</span><span class="text-gray-300">6309-2RS</span></div>
+<div class="flex justify-between"><span class="text-gray-500">Coupling</span><span class="text-gray-300">Flexible Jaw</span></div>
+<div class="flex justify-between"><span class="text-gray-500">Blades</span><span class="text-gray-300">6 Vanes</span></div>
+<div class="flex justify-between"><span class="text-gray-500">1X Freq</span><span class="mono text-blue-400" id="info1X">24.5 Hz</span></div>
+<div class="flex justify-between"><span class="text-gray-500">BPF</span><span class="mono text-purple-400" id="infoBPF">147 Hz</span></div>
+</div>
+</div>
+</aside>
+
+</main>
+
+<!-- AI Modal -->
+<div class="modal-overlay" id="aiModal">
+<div class="glass rounded-2xl p-8 max-w-md w-full mx-4 text-center">
+<div class="w-20 h-20 border-4 border-purple-500 border-t-transparent rounded-full progress-ring mx-auto mb-6"></div>
+<h3 class="text-lg font-bold text-purple-400 mb-2">AI Analyzing Spectrum</h3>
+<p class="text-sm text-gray-400 mb-6" id="modalScanText">Processing image data...</p>
+<div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full transition-all" id="modalProgress" style="width:0%"></div>
+</div>
+</div>
+</div>
+
+<script>
+// ==================== CONFIG ====================
+const config = {
+  rpm: 1470, load: 80, fault: 'normal', direction: 'radial',
+  time: 0, wireframe: false, currentTab: 'sim'
+};
+
+// ==================== FAULT DATABASE (Mobius Standard) ====================
+const faults = {
+  normal: {
+    name: 'Normal Operation', icon: '✅', severity: 'A',
+    desc: 'Machine beroperasi dalam limit ISO 10816-3 Zone A. Tidak ada abnormal spectral pattern terdeteksi.',
+    spectrum: [{o:1,a:0.24},{o:2,a:0.08},{o:3,a:0.03}],
+    overall: 0.8, phase: 0, dir: 'radial',
+    recs: ['Lanjutkan routine monitoring setiap 3 bulan','Vibration level stabil - trending acceptable'],
+    mobiusRef: 'Baseline condition - all spectral components within normal limits'
+  },
+  unbalance: {
+    name: 'Unbalance (Ketidakseimbangan)', icon: '⚖️', severity: 'C',
+    desc: '1X RPM dominant pada radial direction. Amplitude cenderung meningkat terhadap RPM². Phase stabil antar bearing (0°±30°). V/H phase difference sekitar 90°±30°.',
+    spectrum: [{o:1,a:4.5},{o:2,a:0.3},{o:3,a:0.1}],
+    overall: 5.2, phase: 0.1, dir: 'radial',
+    recs: ['Lakukan on-site dynamic balancing','Cek material buildup pada impeller/blades','Inspect impeller wear atau erosion','Bersihkan rotor bila terkontaminasi'],
+    mobiusRef: 'Mobius D-6/D-7: 1X radial dominant, 90±30° phase between V&H, in-phase across machine'
+  },
+  misalignment: {
+    name: 'Misalignment (Ketidaklurusan)', icon: '🔧', severity: 'D',
+    desc: '2X radial tinggi dengan 1X dan 3X signifikan. Phase 180° across coupling pada radial. Axial vibration meningkat.',
+    spectrum: [{o:1,a:2.8},{o:2,a:4.2},{o:3,a:2.1},{o:4,a:0.8}],
+    overall: 7.8, phase: Math.PI, dir: 'both',
+    recs: ['Lakukan laser shaft alignment segera','Cek coupling wear dan condition','Verifikasi soft foot correction sebelum alignment','Re-check setelah 24 jam operation'],
+    mobiusRef: 'Mobius D-13: 1X & 2X dominant, 180° across coupling, axial vibration elevated'
+  },
+  looseness: {
+    name: 'Mechanical Looseness (Kelonggaran)', icon: '🔩', severity: 'D',
+    desc: 'Multiple harmonics dari 1X (1X sampai 10X). Mungkin muncul 0.5X sub-harmonic. Noise floor dapat meningkat.',
+    spectrum: [{o:0.5,a:1.2},{o:1,a:3.5},{o:2,a:3.0},{o:3,a:2.2},{o:4,a:1.8},{o:5,a:1.2},{o:6,a:0.8},{o:7,a:0.5},{o:8,a:0.3}],
+    overall: 9.5, phase: Math.random()*Math.PI*2, dir: 'radial',
+    recs: ['Kencangkan semua foundation bolts','Cek cracked foundation atau grout','Inspect bearing housing clearance','Verifikasi structural integrity baseplate'],
+    mobiusRef: 'Mobius D-18/D-19: 1X harmonics radial, possible 0.5X sub-harmonic, phase unstable'
+  },
+  bearing: {
+    name: 'Rolling Element Bearing Wear', icon: '⚙️', severity: 'C',
+    desc: 'Non-synchronous peaks pada bearing defect frequencies (BPFO, BPFI, FTF, BSF). Noise floor meningkat dan dapat muncul 1X sidebands di sekitar defect frequencies.',
+    spectrum: [{o:1,a:1.5},{o:3.2,a:3.8,label:'BPFO'},{o:4.9,a:2.8,label:'BPFI'},{o:0.4,a:0.6,label:'FTF'},{o:6.4,a:1.5,label:'BSF'}],
+    overall: 6.2, phase: 0, dir: 'radial',
+    recs: ['Monitor dengan enveloping/demodulation','Schedule bearing replacement dalam 2-4 minggu','Cek lubrication condition dan interval','Siapkan spare bearing untuk outage berikutnya'],
+    mobiusRef: 'Mobius D-26: Non-synchronous peaks at BPFO/BPFI/FTF/BSF with sidebands'
+  },
+  resonance: {
+    name: 'Structural Resonance', icon: '📈', severity: 'B',
+    desc: 'Amplification hump pada natural frequency. Amplitude berubah/turun saat speed berubah. Biasanya dominan pada satu direction.',
+    spectrum: [{o:1,a:1.2},{o:1.8,a:5.5,label:'Natural Freq'},{o:2,a:0.6},{o:3,a:0.3}],
+    overall: 4.8, phase: 0, dir: 'radial',
+    recs: ['Identifikasi natural frequency via bump test','Tambah stiffness (gussets, braces) untuk shift natural frequency','Atau tambah damping (viscoelastic materials)','Hindari operation dekat critical speed'],
+    mobiusRef: 'Mobius D-25: Amplification hump, directional, amplitude sensitive to speed change'
+  },
+  cavitation: {
+    name: 'Cavitation (Kavitasi)', icon: '💨', severity: 'C',
+    desc: 'Random broadband high-frequency noise. Sering terdengar seperti gravel in pump. Muncul hump pada high frequency region.',
+    spectrum: [{o:1,a:1.0},{o:6,a:0.8,label:'BPF'},{o:12,a:0.5}],
+    overall: 5.5, phase: 0, dir: 'radial',
+    recs: ['Cek suction pressure - naikkan bila rendah','Inspect impeller untuk erosion damage','Verifikasi NPSH available vs required','Cek obstruction pada suction line','Turunkan pump speed bila memungkinkan'],
+    mobiusRef: 'Mobius D-31: Random high-frequency noise, broadband hump, sounds like gravel'
+  },
+  electrical: {
+    name: 'Electrical Fault (Masalah Elektrik)', icon: '⚡', severity: 'B',
+    desc: 'Vibration tinggi pada 2×Line Frequency (100/120 Hz). Pole pass frequency sidebands dapat muncul di sekitar 1X dan 2LF. Vibration biasanya hilang saat motor de-energized.',
+    spectrum: [{o:1,a:1.8},{o:2,a:3.5,label:'2×LF'},{o:3,a:0.8}],
+    overall: 4.2, phase: 0, dir: 'radial',
+    recs: ['Lakukan motor current analysis (MCSA)','Cek eccentric rotor atau uneven air gap','Inspect cracked/broken rotor bars','Verifikasi stator winding insulation','Cek loose connections (phasing)'],
+    mobiusRef: 'Mobius D-33/D-35/D-37: 2×LF dominant, pole pass sidebands, disappears when de-energized'
+  }
+};
+
+// ==================== BEARING DATABASE ====================
+const bearingDB = {
+  '6205': {d:7.94,D:38.5,n:9,a:0,BPFO:3.58,BPFI:5.42,FTF:0.397,BSF:2.36},
+  '6206': {d:9.53,D:46.4,n:9,a:0,BPFO:3.57,BPFI:5.43,FTF:0.397,BSF:2.39},
+  '6207': {d:11.11,D:54.3,n:9,a:0,BPFO:3.58,BPFI:5.42,FTF:0.397,BSF:2.41},
+  '6208': {d:12.7,D:60.3,n:9,a:0,BPFO:3.57,BPFI:5.43,FTF:0.397,BSF:2.39},
+  '6209': {d:14.29,D:66.3,n:10,a:0,BPFO:3.57,BPFI:6.43,FTF:0.40,BSF:2.41},
+  '6210': {d:15.88,D:72.3,n:10,a:0,BPFO:3.57,BPFI:6.43,FTF:0.40,BSF:2.41},
+  '6305': {d:13.49,D:51.6,n:8,a:0,BPFO:3.57,BPFI:5.43,FTF:0.40,BSF:2.36},
+  '6306': {d:15.88,D:59.5,n:8,a:0,BPFO:3.57,BPFI:5.43,FTF:0.40,BSF:2.36},
+  '6307': {d:17.46,D:67.5,n:8,a:0,BPFO:3.57,BPFI:5.43,FTF:0.40,BSF:2.36},
+  '6308': {d:19.05,D:75.4,n:8,a:0,BPFO:3.57,BPFI:5.43,FTF:0.40,BSF:2.36},
+  '6309': {d:20.64,D:83.3,n:9,a:0,BPFO:3.58,BPFI:5.42,FTF:0.397,BSF:2.41},
+  '6310': {d:22.23,D:91.3,n:9,a:0,BPFO:3.58,BPFI:5.42,FTF:0.397,BSF:2.41},
+  '6312': {d:25.4,D:107.3,n:9,a:0,BPFO:3.58,BPFI:5.42,FTF:0.397,BSF:2.41},
+  '22206': {d:10,D:45.5,n:12,a:15,BPFO:3.24,BPFI:4.95,FTF:0.39,BSF:2.15},
+  '22208': {d:12.7,D:55.5,n:12,a:15,BPFO:3.24,BPFI:4.95,FTF:0.39,BSF:2.15},
+  '22210': {d:14.29,D:65.5,n:12,a:15,BPFO:3.24,BPFI:4.95,FTF:0.39,BSF:2.15},
+  '22212': {d:17.46,D:80.5,n:12,a:15,BPFO:3.24,BPFI:4.95,FTF:0.39,BSF:2.15},
+};
+
+// ==================== EQUIPMENT DATA (Exsume Vibrasi Januari 2026.pdf - Januari 2026) ====================
+const equipmentDataJan2026 = [{"unit": "UNIT 1", "no": 1, "equipment": "Motor ID Fan 1#1", "group": "GROUP 1", "values": [0.63, 0.83, 0.63, 1.31, 1.39, 0.74, 0.44, 0.67, 1.09, 0.51, 0.59, 0.74, 0.81, 0.67, 0.69, 0.89, 1.29, 1.07], "vibMax": 1.39, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 1, "equipment": "2", "group": "", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 2, "equipment": "Motor ID Fan 2#1", "group": "GROUP 1", "values": [0.33, 0.63, 0.37, 0.34, 0.87, 0.37, 0.3, 0.72, 0.93, 0.28, 0.63, 0.47, 0.48, 0.64, 0.67, 0.76, 1.96, 0.43], "vibMax": 1.96, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 3, "equipment": "Motor Primary Air Fan 1#1", "group": "GROUP 1", "values": [0.64, 2.43, 1.08, 1.36, 1.52, 1.23, 1.96, 1.99, 2.29, 2.99, 2.0, 2.36, null, null, null, null, null, null], "vibMax": 2.99, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 4, "equipment": "Motor Primary Air Fan 2#1", "group": "GROUP 1", "values": [0.86, 1.49, 0.86, 1.15, 1.56, 1.16, 0.72, 0.81, 0.54, 0.62, 1.59, 0.58, null, null, null, null, null, null], "vibMax": 1.59, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 5, "equipment": "Motor Secondary Air Fan 1#1", "group": "GROUP 1", "values": [0.42, 2.06, 0.62, 0.63, 1.65, 0.6, 0.4, 1.34, 0.64, 0.49, 0.89, 0.42, null, null, null, null, null, null], "vibMax": 2.06, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 6, "equipment": "Motor Secondary Air Fan 2#1", "group": "GROUP 1", "values": [2.75, 3.42, 2.9, 3.76, 7.31, 2.99, 1.09, 4.01, 2.87, 5.23, 5.83, 3.48, null, null, null, null, null, null], "vibMax": 7.31, "status": "ALARM"}, {"unit": "UNIT 1", "no": 7, "equipment": "Turbin-Generator#1", "group": "GROUP 1", "values": [2.78, 1.31, 1.04, 3.52, 1.9, 2.35, 3.47, 2.46, 2.29, 1.35, 0.34, 0.73, null, null, null, null, null, null], "vibMax": 3.52, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 8, "equipment": "Motor Condensat Pump 1#1", "group": "GROUP 2", "values": [0.48, 0.77, 0.0, 0.25, 0.71, 0.56, 0.45, 0.39, 0.63, null, null, null, null, null, null, null, null, null], "vibMax": 0.77, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 9, "equipment": "Motor Condensat Pump 2#1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 10, "equipment": "Motor Vacuum Pump 1#1", "group": "GROUP 2", "values": [0.71, 0.83, 0.44, 0.74, 0.82, 0.54, 0.9, 0.85, 0.42, 1.43, 1.22, 0.44, null, null, null, null, null, null], "vibMax": 1.43, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 11, "equipment": "Motor Vacuum Pump 2#1", "group": "GROUP 2", "values": [0.49, 0.71, 0.33, 0.5, 0.62, 0.46, 0.86, 0.75, 0.47, 1.03, 1.61, 0.36, null, null, null, null, null, null], "vibMax": 1.61, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 12, "equipment": "Motor Boiler Feed Pump 1#1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 13, "equipment": "Motor Boiler Feed Pump 2#1", "group": "GROUP 2", "values": [0.66, 0.71, 1.26, 0.75, 0.59, 0.69, 3.94, 0.71, 0.56, 0.43, 0.83, 0.76, 2.5, 4.17, 0.77, 1.81, 3.64, 0.66], "vibMax": 4.17, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 14, "equipment": "Motor CCCWP 1#1", "group": "GROUP 2", "values": [2.51, 2.51, null, 1.58, 1.09, 1.03, 1.08, 0.8, 0.48, null, null, null, null, null, null, null, null, null], "vibMax": 2.51, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 15, "equipment": "Motor CCCWP 2#1", "group": "GROUP 2", "values": [1.41, 1.61, null, 0.49, 0.54, 0.52, 0.75, 0.38, 0.33, null, null, null, null, null, null, null, null, null], "vibMax": 1.61, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 16, "equipment": "Motor CWP 355 Kw 1#1", "group": "GROUP 2", "values": [1.63, 1.86, 1.58, 0.81, 0.81, 0.76, 0.57, 0.55, 0.69, null, null, null, null, null, null, null, null, null], "vibMax": 1.86, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 17, "equipment": "Motor CWP 355 Kw 2#1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 18, "equipment": "Motor BWRO 1#1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 19, "equipment": "Motor BWRO 2#1", "group": "GROUP 2", "values": [1.85, 1.58, 0.0, 1.59, 0.79, 0.42, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 1.85, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 20, "equipment": "Motor SWRO 1 #1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 21, "equipment": "Motor SWRO 2#1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 22, "equipment": "AC OIL PUMP UNIT 1", "group": "GROUP 2", "values": [0.61, 1.07, 0.39, 0.52, 1.04, 0.37, 0.84, 0.97, 0.34, 0.66, 0.61, 0.54, null, null, null, null, null, null], "vibMax": 1.07, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 23, "equipment": "DC OIL PUMP UNIT 1", "group": "GROUP 2", "values": [0.86, 0.78, 0.93, 0.83, 1.36, 0.95, 1.17, 1.51, 0.49, 0.74, 1.16, 0.55, null, null, null, null, null, null], "vibMax": 1.51, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 24, "equipment": "DIESEL FIRE FIGHTING UNIT 1", "group": "", "values": [6.56, 5.65, 6.93, 10.25, 9.45, 8.43, 5.54, 2.75, 4.36, 4.42, 3.14, 4.72, null, null, null, null, null, null], "vibMax": 10.25, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 25, "equipment": "ELECTRIC FIRE FIGHTING UNIT 1", "group": "GROUP 2", "values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null, null, null, null, null], "vibMax": 0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 26, "equipment": "JOCKEY FIGHTING UNIT 1", "group": "GROUP 2", "values": [1.19, 1.41, null, 0.6, 0.64, 0.27, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 1.41, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 1, "equipment": "Motor ID Fan 1#2", "group": "GROUP 1", "values": [1.01, 2.32, 1.0, 1.67, 2.18, 1.14, 0.9, 1.67, 1.25, 0.92, 1.48, 1.0, 1.17, 1.39, 0.9, 0.45, 1.07, 0.85], "vibMax": 2.32, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 2, "equipment": "Motor ID Fan 2#2", "group": "GROUP 1", "values": [0.88, 0.97, 0.9, 1.42, 1.22, 0.76, 0.55, 0.76, 2.34, 0.48, 0.63, 1.91, 0.59, 0.89, 0.65, 0.87, 0.73, 1.64], "vibMax": 2.34, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 3, "equipment": "Motor Primary Air Fan 1#2", "group": "GROUP 1", "values": [0.47, 1.56, 1.03, 0.89, 1.3, 0.62, 0.93, 1.46, 0.82, 1.58, 2.32, 1.1, null, null, null, null, null, null], "vibMax": 2.32, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 4, "equipment": "Motor Primary Air Fan 2#2", "group": "GROUP 1", "values": [0.91, 2.95, 1.1, 1.7, 2.59, 0.83, 0.75, 2.32, 1.44, 2.16, 2.63, 1.14, null, null, null, null, null, null], "vibMax": 2.95, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 5, "equipment": "Motor Secondary Air Fan 1#2", "group": "GROUP 1", "values": [3.01, 3.0, 3.34, 2.13, 2.74, 2.86, 1.75, 1.49, 1.06, 0.81, 1.94, 1.04, null, null, null, null, null, null], "vibMax": 3.34, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 6, "equipment": "Motor Secondary Air Fan 2#2", "group": "GROUP 1", "values": [1.36, 1.27, 1.2, 0.34, 2.59, 0.84, 1.18, 1.73, 1.01, 0.85, 1.3, 0.97, null, null, null, null, null, null], "vibMax": 2.59, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 7, "equipment": "Turbin-Generator#2", "group": "GROUP 1", "values": [0.0, 0.0, 0.0, 1.34, 1.4, 1.56, 1.6, 1.89, 0.94, 2.69, 1.81, 4.57, null, null, null, null, null, null], "vibMax": 4.57, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 8, "equipment": "Motor Condensat Pump 1#2", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 9, "equipment": "Motor Condensat Pump 2#2", "group": "GROUP 2", "values": [3.75, 2.42, 0.0, 1.23, 0.88, 0.79, 0.5, 0.51, 0.91, null, null, null, null, null, null, null, null, null], "vibMax": 3.75, "status": "WARNING"}, {"unit": "UNIT 2", "no": 10, "equipment": "Motor Vacuum Pump 1#2", "group": "GROUP 2", "values": [0.45, 0.41, 0.36, 0.61, 0.78, 0.62, 0.95, 1.32, 0.62, 1.86, 1.99, 0.37, null, null, null, null, null, null], "vibMax": 1.99, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 11, "equipment": "Motor Vacuum Pump 2#2", "group": "GROUP 2", "values": [0.8, 0.57, 1.09, 1.6, 2.06, 1.43, 1.95, 1.76, 1.25, 2.31, 2.79, 1.32, null, null, null, null, null, null], "vibMax": 2.79, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 12, "equipment": "Motor Boiler Feed Pump 1#2", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 13, "equipment": "Motor Boiler Feed Pump 2#2", "group": "GROUP 2", "values": [0.78, 1.09, 0.89, 0.77, 1.07, 1.51, 0.5, 0.52, 0.61, 0.35, 0.45, 0.81, 1.19, 1.01, 0.49, 0.45, 0.89, 0.31], "vibMax": 1.51, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 14, "equipment": "Motor CCCWP 1#2", "group": "GROUP 2", "values": [0.0, 0.0, null, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 15, "equipment": "Motor CCCWP 2#2", "group": "GROUP 2", "values": [1.0, 0.9, null, 0.64, 0.71, 0.87, 0.46, 0.5, 0.55, null, null, null, null, null, null, null, null, null], "vibMax": 1.0, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 16, "equipment": "Motor CCCWP 2C", "group": "GROUP 2", "values": [1.19, 1.52, 0.87, 0.83, 1.04, 0.5, 0.4, 0.44, 0.55, null, null, null, null, null, null, null, null, null], "vibMax": 1.52, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 17, "equipment": "Motor CWP 355 Kw 1#2", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 18, "equipment": "Motor CWP 355 Kw 2#2", "group": "GROUP 2", "values": [0.82, 1.07, 0.55, 1.39, 0.44, 1.4, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 1.4, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 19, "equipment": "AC OIL PUMP UNIT 2", "group": "GROUP 2", "values": [0.33, 1.21, 0.39, 0.45, 0.85, 0.61, 2.24, 2.74, 0.94, 1.43, 1.87, 0.74, null, null, null, null, null, null], "vibMax": 2.74, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 20, "equipment": "DC OIL PUMP UNIT 2", "group": "GROUP 2", "values": [0.92, 0.94, 1.27, 0.95, 1.14, 1.05, 1.26, 1.88, 0.59, 0.76, 1.19, 0.59, null, null, null, null, null, null], "vibMax": 1.88, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 1, "equipment": "Motor ID Fan 1#3", "group": "GROUP 1", "values": [0.57, 0.75, 0.81, 0.87, 0.57, 0.35, 0.66, 1.09, 0.38, 0.44, 1.13, 0.28, null, null, null, null, null, null], "vibMax": 1.13, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 2, "equipment": "Motor ID Fan 2#3", "group": "GROUP 1", "values": [0.3, 0.5, 0.46, 0.45, 0.58, 0.41, 0.33, 0.47, 0.33, 0.52, 0.68, 0.32, null, null, null, null, null, null], "vibMax": 0.68, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 3, "equipment": "Motor Primary Air Fan#3", "group": "GROUP 1", "values": [1.87, 1.97, 1.43, 1.52, 2.24, 1.65, 1.4, 1.47, 1.32, 1.78, 2.35, 1.35, null, null, null, null, null, null], "vibMax": 2.35, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 4, "equipment": "Motor Secondary Air Fan#3", "group": "GROUP 1", "values": [1.61, 2.83, 1.16, 2.08, 2.34, 1.51, 1.48, 1.58, 1.6, 2.27, 2.28, 1.62, null, null, null, null, null, null], "vibMax": 2.83, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 5, "equipment": "Motor Recirculating Air Fan 1#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 6, "equipment": "Motor Recirculating Air Fan 2#3", "group": "GROUP 2", "values": [1.19, 1.33, 0.89, 0.8, 1.32, 0.91, 2.36, 3.2, 2.66, 2.24, 2.99, 2.57, 2.18, 2.97, 2.52, 2.14, 2.7, 2.36], "vibMax": 3.2, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 7, "equipment": "Turbin-Generator#3", "group": "GROUP 2", "values": [2.06, 1.1, 0.89, 2.69, 1.92, 2.63, 0.46, 1.17, 2.79, 0.85, 0.63, 1.09, null, null, null, null, null, null], "vibMax": 2.79, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 8, "equipment": "Motor Condensat Pump 1#3", "group": "GROUP 2", "values": [0.95, 2.06, 0.28, 0.96, 1.88, 0.72, 1.22, 1.55, 0.68, 1.27, 1.45, 1.07, null, null, null, null, null, null], "vibMax": 2.06, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 9, "equipment": "Motor Condensat Pump 2#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 10, "equipment": "Motor Condensat Pump 3#3", "group": "GROUP 2", "values": [0.78, 1.69, 0.38, 0.72, 1.75, 0.95, 0.67, 1.59, 1.0, 1.44, 1.66, 1.22, null, null, null, null, null, null], "vibMax": 1.75, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 11, "equipment": "Motor Water jet Pump 1#3", "group": "GROUP 2", "values": [0.69, 1.33, 0.24, 0.88, 1.3, 0.68, 0.8, 0.99, 0.54, 0.97, 0.88, 0.67, null, null, null, null, null, null], "vibMax": 1.33, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 12, "equipment": "Motor Water jet Pump 2#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 13, "equipment": "Motor Boiler Feed Pump 1#3", "group": "GROUP 1", "values": [0.65, 1.68, 1.15, 0.85, 1.25, 1.15, 0.91, 1.94, 1.51, 0.74, 1.8, 1.18, 0.67, 0.97, 0.22, 0.98, 0.88, 0.27], "vibMax": 1.94, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 14, "equipment": "Motor Boiler Feed Pump 2#3", "group": "GROUP 1", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 15, "equipment": "Motor CCWP 1#3", "group": "GROUP 2", "values": [1.0, 0.84, 0.93, 1.53, 2.47, 1.48, 1.27, 1.27, 0.74, 0.79, 0.57, 1.11, null, null, null, null, null, null], "vibMax": 2.47, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 16, "equipment": "Motor CCWP 2#3", "group": "GROUP 2", "values": [1.08, 1.3, 0.58, 2.0, 2.15, 1.79, 1.9, 1.05, 1.54, 1.26, 1.15, 1.82, null, null, null, null, null, null], "vibMax": 2.15, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 17, "equipment": "Motor CWP 355 Kw 1#3", "group": "GROUP 1", "values": [3.68, 2.79, 2.42, 2.04, 1.45, 2.46, 1.06, 1.16, 1.66, null, null, null, null, null, null, null, null, null], "vibMax": 3.68, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 18, "equipment": "Motor CWP 355 Kw 2#3", "group": "GROUP 1", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 19, "equipment": "Motor BWRO 1#3", "group": "GROUP 2", "values": [1.87, 2.09, null, 0.5, 0.6, 0.38, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 2.09, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 20, "equipment": "Motor BWRO 2#3", "group": "GROUP 2", "values": [0.0, 0.0, null, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 21, "equipment": "Motor SWRO 1#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 22, "equipment": "Motor SWRO 2#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 24, "equipment": "Fire Fighting Jockey Pump 1", "group": "GROUP 2", "values": [0.79, 0.95, 0.53, 0.47, 0.46, 0.49, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.95, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 25, "equipment": "Fire Fighting Jockey Pump 2", "group": "GROUP 2", "values": [0.75, 1.02, 0.45, 0.15, 0.35, 0.62, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 1.02, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 26, "equipment": "Fire Fighting Pump With Motor", "group": "GROUP 2", "values": [0.69, 0.98, 0.23, 1.36, 1.19, 0.93, 1.09, 1.35, 1.06, 0.95, 1.52, 1.09, null, null, null, null, null, null], "vibMax": 1.52, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 27, "equipment": "Fire Fighting Pump With Diesel", "group": "", "values": [5.64, 13.96, 4.86, 4.8, 5.36, 5.83, 2.44, 1.81, 6.13, 2.49, 2.91, 6.46, null, null, null, null, null, null], "vibMax": 13.96, "status": "WARNING"}, {"unit": "UNIT 3", "no": 28, "equipment": "AC Oil Pump Unit 3", "group": "GROUP 2", "values": [0.89, 2.55, 2.33, 2.86, 4.94, 2.04, 4.3, 3.76, 3.25, 2.46, 6.44, 1.11, null, null, null, null, null, null], "vibMax": 6.44, "status": "ALARM"}, {"unit": "UNIT 3", "no": 29, "equipment": "DC Oil Pump Unit 3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 30, "equipment": "Jacking Oil Pump 3A", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 31, "equipment": "Jacking Oil Pump 3B", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "COAL ASH HANDLING", "no": 1, "equipment": "BC 4.1", "group": "GROUP 2", "values": [1.28, 2.55, 1.43, 2.03, 2.61, 1.84, 1.62, 1.61, 1.6, 1.2, 1.79, 1.27, 1.68, 1.39, 1.93, 1.76, 1.43, 1.64], "vibMax": 2.61, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 2, "equipment": "BC 4.2", "group": "GROUP 2", "values": [0.69, 1.03, 0.62, 0.77, 1.18, 0.74, 0.9, 1.06, 1.32, 1.06, 0.94, 1.61, 0.97, 1.07, 1.39, 0.99, 1.19, 1.28], "vibMax": 1.61, "status": "NORMAL"}, {"unit": "COAL ASH HANDLING", "no": 3, "equipment": "BC 5.1", "group": "GROUP 2", "values": [1.77, 2.17, 1.35, 1.95, 1.7, 1.23, 1.83, 1.47, 2.23, 1.64, 1.45, 1.11, 1.46, 1.57, 2.11, 1.63, 1.59, 2.17], "vibMax": 2.23, "status": "NORMAL"}, {"unit": "COAL ASH HANDLING", "no": 4, "equipment": "BC 5.2", "group": "GROUP 2", "values": [1.08, 1.86, 0.91, 2.14, 1.55, 0.88, 1.82, 1.47, 2.22, 1.43, 1.43, 1.11, 1.47, 1.62, 1.05, 1.41, 1.51, 1.0], "vibMax": 2.22, "status": "NORMAL"}, {"unit": "COAL ASH HANDLING", "no": 5, "equipment": "BC 7.1", "group": "GROUP 2", "values": [1.25, 1.74, 0.73, 1.64, 1.68, 0.75, 3.04, 2.37, 2.09, 2.08, 1.41, 1.11, 0.35, 0.71, 0.87, 0.39, 1.0, 1.07], "vibMax": 3.04, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 6, "equipment": "BC 7. 2", "group": "GROUP 2", "values": [4.41, 3.36, 3.52, 8.81, 7.61, 4.2, 1.88, 2.31, 7.51, 1.78, 2.16, 7.03, 0.45, 0.77, 1.09, 0.41, 0.57, 1.07], "vibMax": 8.81, "status": "ALARM"}, {"unit": "COAL ASH HANDLING", "no": 7, "equipment": "BC 8.1", "group": "GROUP 2", "values": [2.72, 3.56, null, 2.36, 2.82, 2.47, 1.44, 1.67, 2.79, 1.86, 2.89, 2.42, 1.08, 1.07, 0.34, 1.08, 1.02, 0.29], "vibMax": 3.56, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 8, "equipment": "BC 8.2", "group": "GROUP 2", "values": [3.14, 3.01, null, 1.87, 2.37, 1.57, 1.95, 1.95, 1.64, 1.95, 1.78, 1.95, 1.73, 1.91, 0.61, 1.07, 1.34, 0.58], "vibMax": 3.14, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 9, "equipment": "BC 10.1", "group": "GROUP 2", "values": [2.62, 3.96, null, 1.47, 3.3, 2.75, 1.45, 1.53, null, 2.08, 1.32, 2.36, 1.08, 1.28, 2.08, 1.5, 1.28, 2.17], "vibMax": 3.96, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 10, "equipment": "BC 10.2", "group": "GROUP 2", "values": [2.59, 1.7, null, 1.46, 1.41, 1.57, 1.05, 0.56, null, 1.31, 0.66, 1.13, 2.04, 0.67, 0.95, 2.04, 0.58, 0.79], "vibMax": 2.59, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 11, "equipment": "ROLLER SCREEN 1", "group": "GROUP 2", "values": [8.21, 7.34, null, 5.5, 4.78, 4.36, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 8.21, "status": "ALARM"}, {"unit": "COAL ASH HANDLING", "no": 12, "equipment": "ROLLER SCREEN 2", "group": "GROUP 2", "values": [6.43, 6.77, null, 4.31, 3.63, 3.45, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 6.77, "status": "WARNING"}, {"unit": "COAL ASH HANDLING", "no": 13, "equipment": "Motor Crusser 185kW 1", "group": "GROUP 2", "values": [2.64, 5.71, 1.62, 4.27, 6.33, 1.69, 4.55, 7.83, 7.4, 5.54, 6.73, 9.42, null, null, null, null, null, null], "vibMax": 9.42, "status": "ALARM"}, {"unit": "COAL ASH HANDLING", "no": 14, "equipment": "Motor Crusser 185kW 2", "group": "GROUP 2", "values": [2.19, 5.25, 1.57, 2.57, 5.63, 2.67, 1.76, 5.73, 4.34, 3.57, 3.01, 5.29, null, null, null, null, null, null], "vibMax": 5.73, "status": "PREWARNING"}];
+const equipmentDataAug2025 = [{"unit": "UNIT 1", "no": 1, "equipment": "Motor ID Fan 1#1", "group": "GROUP 1", "values": [0.61, 0.81, 0.65, 1.39, 1.42, 0.8, 0.5, 0.66, 1.08, 0.67, 0.54, 0.84, 0.89, 0.56, 0.83, 0.68, 1.32, 0.89], "vibMax": 1.42, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 2, "equipment": "Motor ID Fan 2#1", "group": "GROUP 1", "values": [0.92, 0.99, 0.43, 0.31, 0.97, 0.4, 0.26, 0.69, 0.69, 0.29, 0.64, 0.5, 0.61, 0.92, 0.69, 0.61, 2.46, 0.48], "vibMax": 2.46, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 3, "equipment": "Motor Primary Air Fan 1#1", "group": "GROUP 1", "values": [0.6, 2.44, 1.46, 1.22, 1.28, 1.61, 2.67, 2.28, 2.86, 3.26, 2.28, 2.24, null, null, null, null, null, null], "vibMax": 3.26, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 4, "equipment": "Motor Primary Air Fan 2#1", "group": "GROUP 1", "values": [0.47, 1.38, 0.92, 1.21, 1.54, 0.84, 0.55, 0.9, 0.52, 0.68, 1.85, 0.43, null, null, null, null, null, null], "vibMax": 1.85, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 5, "equipment": "Motor Secondary Air Fan 1#1", "group": "GROUP 1", "values": [0.42, 2.21, 0.69, 0.3, 1.73, 0.93, 0.57, 1.22, 0.77, 0.74, 0.99, 0.72, null, null, null, null, null, null], "vibMax": 2.21, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 6, "equipment": "Motor Secondary Air Fan 2#1", "group": "GROUP 1", "values": [1.83, 4.1, 2.7, 2.27, 4.13, 2.53, 2.06, 2.54, 2.12, 2.88, 1.8, 2.0, null, null, null, null, null, null], "vibMax": 4.13, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 7, "equipment": "Turbin-Generator#1", "group": "GROUP 1", "values": [2.77, 1.56, 0.77, 2.73, 1.73, 1.63, 3.04, 2.05, 1.6, 1.31, 1.51, 1.15, null, null, null, null, null, null], "vibMax": 3.04, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 8, "equipment": "Motor Condensat Pump 1#1", "group": "GROUP 2", "values": [0.54, 0.75, 0.0, 0.22, 0.37, 0.46, 0.3, 0.43, 0.51, null, null, null, null, null, null, null, null, null], "vibMax": 0.75, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 9, "equipment": "Motor Condensat Pump 2#1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 10, "equipment": "Motor Vacuum Pump 1#1", "group": "GROUP 2", "values": [0.75, 1.06, 0.6, 0.84, 0.99, 0.78, 1.19, 1.18, 0.47, 1.76, 1.85, 0.53, null, null, null, null, null, null], "vibMax": 1.85, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 11, "equipment": "Motor Vacuum Pump 2#1", "group": "GROUP 2", "values": [0.57, 0.67, 0.33, 0.56, 0.73, 0.64, 0.84, 0.95, 0.47, 0.85, 1.97, 0.32, null, null, null, null, null, null], "vibMax": 1.97, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 12, "equipment": "Motor Boiler Feed Pump 1#1", "group": "GROUP 2", "values": [3.0, 1.43, 2.47, 3.04, 1.57, 3.49, 1.08, 0.79, 1.42, 0.87, 0.6, 1.54, 1.59, 1.72, 2.56, 1.53, 1.8, 2.97], "vibMax": 3.49, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 13, "equipment": "Motor Boiler Feed Pump 2#1", "group": "GROUP 2", "values": [0.97, 0.95, 1.16, 0.91, 0.86, 0.86, 0.54, 0.63, 0.68, 0.44, 0.84, 0.9, 2.67, 2.99, 0.67, 1.19, 2.28, 0.86], "vibMax": 2.99, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 14, "equipment": "Motor CCCWP 1#1", "group": "GROUP 2", "values": [2.19, 2.49, null, 1.03, 1.51, 0.9, 0.69, 0.92, 0.97, null, null, null, null, null, null, null, null, null], "vibMax": 2.49, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 15, "equipment": "Motor CCCWP 2#1", "group": "GROUP 2", "values": [2.1, 1.4, null, 0.87, 0.71, 0.56, 0.7, 0.97, 0.25, null, null, null, null, null, null, null, null, null], "vibMax": 2.1, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 16, "equipment": "Motor CWP 355 Kw 1#1", "group": "GROUP 2", "values": [1.51, 1.85, 1.66, 0.7, 0.5, 0.89, 0.36, 0.49, 0.7, null, null, null, null, null, null, null, null, null], "vibMax": 1.85, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 17, "equipment": "Motor CWP 355 Kw 2#1", "group": "GROUP 2", "values": [1.19, 1.42, 1.23, 0.63, 1.01, 0.78, 0.35, 0.44, 0.67, null, null, null, null, null, null, null, null, null], "vibMax": 1.42, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 18, "equipment": "Motor BWRO 1#1", "group": "GROUP 2", "values": [2.21, 2.44, 0.0, 0.97, 0.91, 0.77, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 2.44, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 19, "equipment": "Motor BWRO 2#1", "group": "GROUP 2", "values": [1.45, 1.86, 0.0, 0.9, 0.69, 0.41, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 1.86, "status": "PREWARNING"}, {"unit": "UNIT 1", "no": 20, "equipment": "Motor SWRO 1 #1", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 1", "no": 21, "equipment": "Motor SWRO 2#1", "group": "GROUP 2", "values": [0.47, 1.02, 0.11, 0.28, 1.2, 0.08, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 1.2, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 22, "equipment": "AC OIL PUMP UNIT 1", "group": "GROUP 2", "values": [0.83, 1.29, 0.31, 0.41, 0.84, 0.82, 0.77, 0.94, 0.63, 0.55, 0.71, 0.58, null, null, null, null, null, null], "vibMax": 1.29, "status": "NORMAL"}, {"unit": "UNIT 1", "no": 23, "equipment": "DC OIL PUMP UNIT 1", "group": "GROUP 2", "values": [0.88, 0.85, 1.08, 0.75, 1.62, 1.72, 1.71, 2.04, 0.56, 1.3, 1.27, 0.86, null, null, null, null, null, null], "vibMax": 2.04, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 1, "equipment": "Motor ID Fan 1#2", "group": "GROUP 1", "values": [0.78, 2.04, 1.25, 1.41, 1.97, 1.23, 1.06, 1.76, 3.46, 2.2, 1.88, 2.72, 1.49, 1.9, 1.06, 0.98, 1.67, 0.99], "vibMax": 3.46, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 2, "equipment": "Motor ID Fan 2#2", "group": "GROUP 1", "values": [0.9, 1.15, 0.86, 1.44, 1.44, 0.81, 0.55, 1.11, 3.09, 0.49, 0.8, 1.3, 0.65, 0.95, 0.7, 0.83, 0.75, 1.7], "vibMax": 3.09, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 3, "equipment": "Motor Primary Air Fan 1#2", "group": "GROUP 1", "values": [0.33, 1.58, 0.58, 0.76, 1.8, 0.61, 1.01, 2.11, 1.28, 2.16, 2.82, 1.29, null, null, null, null, null, null], "vibMax": 2.82, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 4, "equipment": "Motor Primary Air Fan 2#2", "group": "GROUP 1", "values": [0.47, 1.6, 1.23, 1.17, 1.99, 0.93, 0.62, 1.32, 0.94, 1.07, 1.12, 0.74, null, null, null, null, null, null], "vibMax": 1.99, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 5, "equipment": "Motor Secondary Air Fan 1#2", "group": "GROUP 1", "values": [1.16, 2.44, 2.53, 1.11, 2.04, 1.36, 0.94, 0.93, 0.84, 0.71, 1.29, 0.77, null, null, null, null, null, null], "vibMax": 2.53, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 6, "equipment": "Motor Secondary Air Fan 2#2", "group": "GROUP 1", "values": [1.14, 2.79, 0.82, 0.52, 2.0, 0.72, 1.06, 1.37, 0.88, 0.6, 1.54, 1.01, null, null, null, null, null, null], "vibMax": 2.79, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 7, "equipment": "Turbin-Generator#2", "group": "GROUP 1", "values": [2.96, 1.07, 1.22, 1.49, 1.14, 1.88, 1.53, 1.79, 2.22, 1.33, 2.14, 2.36, null, null, null, null, null, null], "vibMax": 2.96, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 8, "equipment": "Motor Condensat Pump 1#2", "group": "GROUP 2", "values": [0.8, 0.83, 0.0, 0.44, 0.52, 0.53, 0.28, 0.45, 0.52, null, null, null, null, null, null, null, null, null], "vibMax": 0.83, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 9, "equipment": "Motor Condensat Pump 2#2", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 10, "equipment": "Motor Vacuum Pump 1#2", "group": "GROUP 2", "values": [0.76, 0.38, 0.31, 0.78, 0.74, 0.58, 1.09, 1.17, 0.59, 0.99, 2.08, 0.39, null, null, null, null, null, null], "vibMax": 2.08, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 11, "equipment": "Motor Vacuum Pump 2#2", "group": "GROUP 2", "values": [0.81, 0.87, 1.5, 1.5, 2.05, 1.51, 2.63, 2.06, 1.1, 2.36, 2.71, 1.06, null, null, null, null, null, null], "vibMax": 2.71, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 12, "equipment": "Motor Boiler Feed Pump 1#2", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 13, "equipment": "Motor Boiler Feed Pump 2#2", "group": "GROUP 2", "values": [0.75, 0.76, 1.31, 0.78, 0.66, 1.59, 0.33, 0.49, 0.49, 0.26, 0.4, 0.73, 0.96, 0.83, 0.36, 0.47, 0.61, 0.25], "vibMax": 1.59, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 14, "equipment": "Motor CCCWP 1#2", "group": "GROUP 2", "values": [2.25, 0.89, null, 1.16, 0.69, 0.78, 0.65, 0.33, 0.83, null, null, null, null, null, null, null, null, null], "vibMax": 2.25, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 15, "equipment": "Motor CCCWP 2#2", "group": "GROUP 2", "values": [0.0, 0.0, null, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 2", "no": 16, "equipment": "Motor CWP 355 Kw 1#2", "group": "GROUP 2", "values": [3.84, 7.06, 2.08, 1.34, 2.82, 1.83, 0.76, 1.48, 1.37, null, null, null, null, null, null, null, null, null], "vibMax": 7.06, "status": "WARNING"}, {"unit": "UNIT 2", "no": 17, "equipment": "Motor CWP 355 Kw 2#2", "group": "GROUP 2", "values": [1.01, 1.52, 0.98, 0.41, 0.78, 1.33, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 1.52, "status": "NORMAL"}, {"unit": "UNIT 2", "no": 18, "equipment": "AC OIL PUMP UNIT 2", "group": "GROUP 2", "values": [0.36, 1.34, 0.29, 0.41, 0.97, 0.52, 2.23, 2.45, 0.71, 1.25, 1.79, 0.61, null, null, null, null, null, null], "vibMax": 2.45, "status": "PREWARNING"}, {"unit": "UNIT 2", "no": 19, "equipment": "DC OIL PUMP UNIT 2", "group": "GROUP 2", "values": [0.86, 0.91, 1.17, 0.99, 1.36, 1.14, 0.96, 2.18, 0.57, 0.8, 1.34, 0.8, null, null, null, null, null, null], "vibMax": 2.18, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 1, "equipment": "Motor ID Fan 1#3", "group": "GROUP 1", "values": [0.88, 0.79, 0.61, 1.08, 0.69, 0.35, 0.76, 1.12, 0.36, 0.5, 1.29, 0.32, null, null, null, null, null, null], "vibMax": 1.29, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 2, "equipment": "Motor ID Fan 2#3", "group": "GROUP 1", "values": [0.3, 0.58, 0.63, 0.9, 1.01, 0.62, 0.4, 0.34, 0.36, 0.42, 0.53, 0.3, null, null, null, null, null, null], "vibMax": 1.01, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 3, "equipment": "Motor Primary Air Fan#3", "group": "GROUP 1", "values": [3.73, 4.37, 2.67, 1.6, 4.28, 2.62, 2.35, 3.6, 1.7, 3.15, 4.01, 1.49, null, null, null, null, null, null], "vibMax": 4.37, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 4, "equipment": "Motor Secondary Air Fan#3", "group": "GROUP 1", "values": [1.19, 2.94, 1.22, 1.88, 2.96, 1.11, 1.28, 1.9, 1.26, 1.97, 2.75, 1.5, null, null, null, null, null, null], "vibMax": 2.96, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 5, "equipment": "Motor Recirculating Air Fan 1#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 6, "equipment": "Motor Recirculating Air Fan 2#3", "group": "GROUP 2", "values": [1.46, 1.71, 0.94, 0.81, 1.44, 0.98, 2.58, 3.7, 2.74, 2.43, 2.98, 2.7, 2.3, 3.71, 2.65, 2.27, 2.87, 2.52], "vibMax": 3.71, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 7, "equipment": "Turbin-Generator#3", "group": "GROUP 2", "values": [1.46, 0.94, 0.58, 2.61, 1.99, 2.11, 0.53, 1.25, 2.23, 0.89, 0.8, 1.07, null, null, null, null, null, null], "vibMax": 2.61, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 8, "equipment": "Motor Condensat Pump 1#3", "group": "GROUP 2", "values": [0.88, 1.78, 0.3, 0.99, 1.93, 0.77, 1.2, 2.03, 0.63, 0.98, 1.82, 2.3, null, null, null, null, null, null], "vibMax": 2.3, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 9, "equipment": "Motor Condensat Pump 2#3", "group": "GROUP 2", "values": [0.89, 1.43, 0.28, 1.27, 1.88, 0.74, 0.83, 1.45, 0.59, 1.17, 2.62, 2.41, null, null, null, null, null, null], "vibMax": 2.62, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 10, "equipment": "Motor Condensat Pump 3#3", "group": "GROUP 2", "values": [0.87, 1.66, 0.32, 1.1, 1.59, 1.17, 0.7, 1.19, 0.66, 0.72, 1.04, 2.02, null, null, null, null, null, null], "vibMax": 2.02, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 11, "equipment": "Motor Water jet Pump 1#3", "group": "GROUP 2", "values": [1.19, 1.91, 0.47, 1.95, 1.94, 1.96, 0.71, 1.83, 0.54, 1.35, 0.76, 0.54, null, null, null, null, null, null], "vibMax": 1.96, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 12, "equipment": "Motor Water jet Pump 2#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 13, "equipment": "Motor Boiler Feed Pump 1#3", "group": "GROUP 1", "values": [0.84, 1.44, 1.07, 0.56, 0.88, 1.11, 1.06, 2.12, 1.14, 0.81, 2.33, 1.03, 1.5, 2.08, 0.52, 1.06, 1.47, 0.4], "vibMax": 2.33, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 14, "equipment": "Motor Boiler Feed Pump 2#3", "group": "GROUP 1", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 15, "equipment": "Motor CCWP 1#3", "group": "GROUP 2", "values": [1.03, 0.71, 1.21, 1.82, 2.61, 1.64, 1.4, 1.33, 0.79, 1.06, 0.74, 1.05, null, null, null, null, null, null], "vibMax": 2.61, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 16, "equipment": "Motor CCWP 2#3", "group": "GROUP 2", "values": [0.94, 1.52, 0.63, 1.74, 2.05, 1.4, 1.77, 0.92, 1.64, 1.13, 1.12, 1.73, null, null, null, null, null, null], "vibMax": 2.05, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 17, "equipment": "Motor CWP 355 Kw 1#3", "group": "GROUP 1", "values": [1.56, 1.72, 2.41, 1.03, 1.34, 2.42, 0.6, 0.52, 1.63, null, null, null, null, null, null, null, null, null], "vibMax": 2.42, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 18, "equipment": "Motor CWP 355 Kw 2#3", "group": "GROUP 1", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 19, "equipment": "Motor BWRO 1#3", "group": "GROUP 2", "values": [0.0, 0.0, null, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 20, "equipment": "Motor BWRO 2#3", "group": "GROUP 2", "values": [0.0, 0.0, null, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 21, "equipment": "Motor SWRO 1#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 22, "equipment": "Motor SWRO 2#3", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "UNIT 3", "no": 24, "equipment": "Fire Fighting Jockey Pump 1", "group": "GROUP 2", "values": [0.84, 0.87, 0.59, 0.51, 0.43, 0.64, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 0.87, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 25, "equipment": "Fire Fighting Jockey Pump 2", "group": "GROUP 2", "values": [0.98, 1.34, 0.57, 0.87, 0.53, 0.74, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 1.34, "status": "NORMAL"}, {"unit": "UNIT 3", "no": 26, "equipment": "Fire Fighting Pump With Motor", "group": "GROUP 2", "values": [2.22, 1.41, 0.3, 2.37, 1.54, 1.59, 0.96, 2.18, 1.42, 0.85, 1.49, 1.73, 2.37, null, null, null, null, null], "vibMax": 2.37, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 27, "equipment": "Fire Fighting Pump With Diesel", "group": null, "values": [5.7, 13.6, 4.68, 5.69, 5.15, 5.2, 1.9, 1.93, 5.47, 1.59, 1.69, 5.57, null, null, null, null, null, null], "vibMax": 13.6, "status": "WARNING"}, {"unit": "UNIT 3", "no": 28, "equipment": "AC Oil Pump Unit 3", "group": "GROUP 2", "values": [3.08, 2.89, 2.04, 1.56, 4.17, 2.14, 4.11, 4.54, 3.1, 1.92, 7.33, 1.11, null, null, null, null, null, null], "vibMax": 7.33, "status": "ALARM"}, {"unit": "UNIT 3", "no": 29, "equipment": "DC Oil Pump Unit 3", "group": "GROUP 2", "values": [2.54, 0.43, 0.44, 0.47, 0.45, 0.56, 2.25, 2.45, 1.99, 1.58, 2.89, 2.08, null, null, null, null, null, null], "vibMax": 2.89, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 30, "equipment": "Jacking Oil Pump 3A", "group": "GROUP 2", "values": [1.07, 1.43, 1.37, 1.59, 1.16, 1.72, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 1.72, "status": "PREWARNING"}, {"unit": "UNIT 3", "no": 31, "equipment": "Jacking Oil Pump 3B", "group": "GROUP 2", "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, null, null, null, null, null, null], "vibMax": 0.0, "status": "STAND BY"}, {"unit": "COAL ASH HANDLING", "no": 1, "equipment": "BC 4.1", "group": "GROUP 2", "values": [1.0, 2.71, 1.1, 1.7, 3.07, 1.48, 1.41, 1.47, 1.89, 0.94, 1.9, 1.0, 1.44, 1.41, 3.32, 1.12, 1.28, 2.28], "vibMax": 3.32, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 2, "equipment": "BC 4.2", "group": "GROUP 2", "values": [1.6, 2.03, 1.4, 1.77, 2.36, 1.49, 1.08, 1.56, 1.51, 0.82, 1.16, 0.73, 0.96, 0.95, 1.41, 0.98, 0.95, 1.31], "vibMax": 2.36, "status": "NORMAL"}, {"unit": "COAL ASH HANDLING", "no": 3, "equipment": "BC 5.1", "group": "GROUP 2", "values": [1.79, 1.48, 1.07, 2.75, 1.79, 1.12, 3.93, 2.04, 2.37, 4.25, 2.18, 1.53, 3.35, 2.18, 2.79, 3.64, 1.89, 3.18], "vibMax": 4.25, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 4, "equipment": "BC 5.2", "group": "GROUP 2", "values": [0.85, 1.34, 0.98, 2.51, 1.12, 0.83, 3.22, 1.3, 2.85, 3.53, 1.88, 2.32, 3.0, 1.57, 2.13, 3.3, 1.5, 2.14], "vibMax": 3.53, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 5, "equipment": "BC 7.1", "group": "GROUP 2", "values": [0.86, 2.25, 0.88, 1.15, 1.71, 0.84, 3.82, 3.28, 3.78, 3.25, 1.66, 1.2, 0.58, 0.79, 1.64, 0.68, 0.95, 2.83], "vibMax": 3.82, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 6, "equipment": "BC 7. 2", "group": "GROUP 2", "values": [0.72, 0.84, 0.49, 0.82, 0.73, 0.44, 2.03, 2.43, 1.77, 1.19, 1.29, 0.91, 0.34, 0.75, 0.77, 0.44, 2.09, 0.84], "vibMax": 2.43, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 7, "equipment": "BC 8.1", "group": "GROUP 2", "values": [2.53, 4.08, null, 2.45, 3.04, 2.55, 2.39, 2.13, 2.55, 2.9, 3.47, 2.94, 0.82, 0.35, 0.34, 0.88, 0.3, 0.3], "vibMax": 4.08, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 8, "equipment": "BC 8.2", "group": "GROUP 2", "values": [3.18, 3.69, null, 2.26, 2.44, 1.4, 1.86, 1.78, 2.6, 1.76, 2.2, 1.87, 0.8, 0.32, 0.34, 0.77, 0.34, 0.31], "vibMax": 3.69, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 9, "equipment": "BC 10.1", "group": "GROUP 2", "values": [2.55, 4.5, null, 1.48, 3.26, 2.36, 1.02, 1.73, null, 1.19, 1.48, 1.75, 1.18, 0.87, 0.9, 1.0, 0.79, 1.31], "vibMax": 4.5, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 10, "equipment": "BC 10.2", "group": "GROUP 2", "values": [2.47, 2.17, null, 2.17, 1.73, 6.09, 1.61, 0.82, null, 1.64, 0.65, 3.47, 0.99, 0.83, 0.98, 1.66, 0.87, 0.89], "vibMax": 6.09, "status": "WARNING"}, {"unit": "COAL ASH HANDLING", "no": 11, "equipment": "ROLLER SCREEN 1", "group": "GROUP 2", "values": [7.47, 5.61, null, 5.08, 4.32, 3.7, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 7.47, "status": "WARNING"}, {"unit": "COAL ASH HANDLING", "no": 12, "equipment": "ROLLER SCREEN 2", "group": "GROUP 2", "values": [5.65, 4.31, null, 3.95, 2.8, 2.71, null, null, null, null, null, null, null, null, null, null, null, null], "vibMax": 5.65, "status": "PREWARNING"}, {"unit": "COAL ASH HANDLING", "no": 15, "equipment": "Motor Crusser 185kW 1", "group": "GROUP 2", "values": [1.62, 8.45, 1.49, 2.41, 9.34, 1.02, 2.09, 6.4, 3.99, 4.86, 6.19, 7.4, null, null, null, null, null, null], "vibMax": 9.34, "status": "ALARM"}, {"unit": "COAL ASH HANDLING", "no": 16, "equipment": "Motor Crusser 185kW 2", "group": "GROUP 2", "values": [1.37, 7.64, 1.52, 2.11, 5.3, 2.12, 2.64, 2.76, 3.64, 2.96, 2.35, 3.17, null, null, null, null, null, null], "vibMax": 7.64, "status": "WARNING"}];
+
+const equipmentDatasets = {
+  '2026-01-01': { label: '01 Januari 2026', monthLabel: 'Januari 2026', source: 'Exsume Vibrasi Januari 2026.pdf', data: equipmentDataJan2026 },
+  '2025-08-01': { label: '01 Agustus 2025', monthLabel: 'Agustus 2025', source: 'Equipment.pdf / data awal aplikasi', data: equipmentDataAug2025 }
+};
+let activeEquipmentDatasetKey = '2026-01-01';
+let equipmentData = equipmentDatasets[activeEquipmentDatasetKey].data;
+const measurementLabels = ['1V','1H','1A','2V','2H','2A','3V','3H','3A','4V','4H','4A','5V','5H','5A','6V','6H','6A'];
+
+
+// ==================== THREE.JS SETUP ====================
+let scene, camera, renderer, controls, machineGroup, motorGroup, pumpGroup, couplingGroup;
+let shaftMotor, shaftPump, impeller, coupling, arrowAxial, arrowRadial;
+
+function init3D() {
+  const container = document.getElementById('canvas3d');
+  if (!container) return;
+  if (!window.THREE) {
+    console.warn('Three.js tidak termuat. Tampilan 3D diganti dengan fallback, tetapi simulasi/chart tetap berjalan.');
+    container.innerHTML = '<div class="fallback-3d"><div><div class="text-4xl mb-2">⚙️</div><div class="font-bold text-white mb-1">3D engine belum termuat</div><div class="text-xs">Periksa koneksi CDN Three.js atau jalankan file melalui server lokal.</div></div></div>';
+    return;
+  }
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0e1a);
+  scene.fog = new THREE.Fog(0x0a0e1a, 15, 30);
+
+  camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 50);
+  camera.position.set(7, 4.5, 7);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  container.appendChild(renderer.domElement);
+
+  const OrbitControlsCtor = THREE.OrbitControls || window.OrbitControls;
+  if (typeof OrbitControlsCtor === 'function') {
+    controls = new OrbitControlsCtor(camera, renderer.domElement);
+  } else {
+    console.warn('OrbitControls tidak termuat. Kamera tetap aktif tanpa kontrol orbit.');
+    controls = { update(){} };
+  }
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.target.set(0, 0.8, 0);
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x404060, 1.2));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+  dl.position.set(5, 8, 5);
+  dl.castShadow = true;
+  scene.add(dl);
+  const pl = new THREE.PointLight(0x3b82f6, 0.6, 20);
+  pl.position.set(-4, 3, -4);
+  scene.add(pl);
+  const pl2 = new THREE.PointLight(0x8b5cf6, 0.4, 20);
+  pl2.position.set(4, 3, 4);
+  scene.add(pl2);
+
+  // Grid
+  const grid = new THREE.GridHelper(12, 24, 0x1e293b, 0x0f172a);
+  scene.add(grid);
+
+  // Machine group
+  machineGroup = new THREE.Group();
+  scene.add(machineGroup);
+
+  // Materials
+  const matBase = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+  const matMotor = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, metalness: 0.3, roughness: 0.5 });
+  const matPump = new THREE.MeshStandardMaterial({ color: 0x059669, metalness: 0.3, roughness: 0.5 });
+  const matShaft = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.3 });
+  const matCoupling = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.4, roughness: 0.4 });
+  const matBearing = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.3, roughness: 0.6 });
+  const matImpeller = new THREE.MeshStandardMaterial({ color: 0x06b6d4, metalness: 0.3, roughness: 0.5 });
+
+  // Base plate
+  const base = new THREE.Mesh(new THREE.BoxGeometry(7, 0.2, 2), matBase);
+  base.position.y = 0.1;
+  base.receiveShadow = true;
+  machineGroup.add(base);
+
+  // Motor (left)
+  motorGroup = new THREE.Group();
+  motorGroup.position.set(-2.5, 0, 0);
+  const motorBody = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1.2), matMotor);
+  motorBody.position.set(-0.8, 0.8, 0);
+  motorBody.castShadow = true;
+  motorGroup.add(motorBody);
+  // Motor fan cover
+  const fanCover = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 24), matMotor);
+  fanCover.rotation.z = Math.PI/2;
+  fanCover.position.set(-2, 0.8, 0);
+  motorGroup.add(fanCover);
+  machineGroup.add(motorGroup);
+
+  // Motor shaft
+  shaftMotor = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.8, 16), matShaft);
+  shaftMotor.rotation.z = Math.PI/2;
+  shaftMotor.position.set(-0.2, 0.8, 0);
+  shaftMotor.castShadow = true;
+  motorGroup.add(shaftMotor);
+
+  // Motor bearing
+  const motorBrg = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.25, 16), matBearing);
+  motorBrg.rotation.z = Math.PI/2;
+  motorBrg.position.set(0.3, 0.8, 0);
+  motorGroup.add(motorBrg);
+
+  // Pump (right)
+  pumpGroup = new THREE.Group();
+  pumpGroup.position.set(2.5, 0, 0);
+  const pumpBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.4, 1.4), matPump);
+  pumpBody.position.set(0.6, 0.9, 0);
+  pumpBody.castShadow = true;
+  pumpGroup.add(pumpBody);
+  // Pump volute
+  const volute = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.2, 24), matPump);
+  volute.rotation.x = Math.PI/2;
+  volute.position.set(1.2, 0.9, 0);
+  pumpGroup.add(volute);
+  // Discharge flange
+  const discharge = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.4, 12), matPump);
+  discharge.position.set(1.2, 1.8, 0);
+  pumpGroup.add(discharge);
+  machineGroup.add(pumpGroup);
+
+  // Pump shaft
+  shaftPump = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.8, 16), matShaft);
+  shaftPump.rotation.z = Math.PI/2;
+  shaftPump.position.set(0.2, 0.8, 0);
+  shaftPump.castShadow = true;
+  pumpGroup.add(shaftPump);
+
+  // Pump bearing
+  const pumpBrg = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.25, 16), matBearing);
+  pumpBrg.rotation.z = Math.PI/2;
+  pumpBrg.position.set(-0.3, 0.8, 0);
+  pumpGroup.add(pumpBrg);
+
+  // Impeller (inside pump)
+  impeller = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.3), matImpeller);
+    blade.rotation.y = (Math.PI * 2 / 6) * i;
+    blade.position.x = 0.3;
+    impeller.add(blade);
+  }
+  impeller.position.set(0.6, 0.9, 0);
+  pumpGroup.add(impeller);
+
+  // Coupling
+  coupling = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.5, 24), matCoupling);
+  coupling.rotation.z = Math.PI/2;
+  coupling.position.set(0, 0.8, 0);
+  coupling.castShadow = true;
+  machineGroup.add(coupling);
+
+  // Direction arrows
+  arrowAxial = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 2, 0), 0.8, 0xef4444, 0.2, 0.15);
+  machineGroup.add(arrowAxial);
+  arrowRadial = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 2, 0), 0.8, 0x10b981, 0.2, 0.15);
+  machineGroup.add(arrowRadial);
+
+  // Axis labels
+  const loader = new THREE.TextureLoader();
+  function makeLabel(text, pos, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.font = 'bold 32px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, 64, 42);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(pos);
+    sprite.scale.set(1.2, 0.6, 1);
+    machineGroup.add(sprite);
+  }
+  makeLabel('X (Axial)', new THREE.Vector3(1.5, 2.3, 0), '#ef4444');
+  makeLabel('Y (Radial)', new THREE.Vector3(0, 2.8, 0), '#10b981');
+
+  animate3D();
+}
+
+let rotAngle = 0;
+function animate3D() {
+  requestAnimationFrame(animate3D);
+  if (!renderer || !scene || !camera || !impeller || !motorGroup || !pumpGroup || !coupling) return;
+  const dt = 0.016;
+  if (config.fault !== 'paused') config.time += dt;
+  
+  const f = faults[config.fault];
+  const vib = f.spectrum[0].a * 0.02;
+  const freqMult = f.dir === 'axial' ? 2 : 1;
+  const phaseDiff = f.phase;
+
+  // Rotate impeller
+  rotAngle += config.rpm / 60 * dt * Math.PI * 2;
+  impeller.rotation.y = rotAngle;
+
+  // Vibration displacement
+  let motorY = 0, motorX = 0, motorZ = 0;
+  let pumpY = 0, pumpX = 0, pumpZ = 0;
+
+  if (config.direction === 'radial' || config.direction === 'both') {
+    motorY = Math.sin(config.time * freqMult * Math.PI * 2) * vib;
+    motorX = Math.sin(config.time * freqMult * Math.PI * 2 + 0.5) * vib * 0.6;
+    pumpY = Math.sin(config.time * freqMult * Math.PI * 2 + phaseDiff) * vib;
+    pumpX = Math.sin(config.time * freqMult * Math.PI * 2 + phaseDiff + 0.5) * vib * 0.6;
+  }
+
+  if (config.fault === 'misalignment' || config.fault === 'bent') {
+    motorZ = Math.sin(config.time * freqMult * Math.PI * 2) * vib * 1.5;
+    pumpZ = Math.sin(config.time * freqMult * Math.PI * 2 + phaseDiff) * vib * 1.5;
+    coupling.rotation.x = Math.sin(config.time * freqMult * Math.PI * 2) * 0.15;
+  } else {
+    coupling.rotation.x *= 0.95;
+  }
+
+  if (config.fault === 'looseness') {
+    motorY += (Math.random() - 0.5) * vib * 0.5;
+    pumpY += (Math.random() - 0.5) * vib * 0.5;
+  }
+
+  motorGroup.position.y = motorY;
+  motorGroup.position.x = -2.5 + motorX;
+  motorGroup.position.z = motorZ;
+  pumpGroup.position.y = pumpY;
+  pumpGroup.position.x = 2.5 + pumpX;
+  pumpGroup.position.z = pumpZ;
+
+  // Update arrows
+  arrowAxial.visible = config.direction === 'axial' || config.direction === 'both';
+  arrowRadial.visible = config.direction === 'radial' || config.direction === 'both';
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+function resetCamera() {
+  if (!camera || !controls) return;
+  camera.position.set(7, 4.5, 7);
+  controls.target.set(0, 0.8, 0);
+  controls.update();
+}
+
+function toggleWireframe() {
+  if (!machineGroup) return;
+  config.wireframe = !config.wireframe;
+  machineGroup.traverse(child => {
+    if (child.isMesh) {
+      child.material.wireframe = config.wireframe;
+    }
+  });
+}
+
+// ==================== CHART DRAWING ====================
+const waveCanvas = document.getElementById('waveCanvas');
+const waveCtx = waveCanvas.getContext('2d');
+const fftCanvas = document.getElementById('fftCanvas');
+const fftCtx = fftCanvas.getContext('2d');
+const phaseCanvas = document.getElementById('phaseCanvas');
+const phaseCtx = phaseCanvas.getContext('2d');
+const orbitCanvas = document.getElementById('orbitCanvas');
+const orbitCtx = orbitCanvas.getContext('2d');
+
+function resizeCharts() {
+  [waveCanvas, fftCanvas, phaseCanvas, orbitCanvas].forEach(c => {
+    if (!c || !c.parentElement) return;
+    const parent = c.parentElement;
+    c.width = parent.clientWidth;
+    c.height = parent.clientHeight;
+  });
+}
+window.addEventListener('resize', resizeCharts);
+
+function drawWaveform() {
+  const w = waveCanvas.width, h = waveCanvas.height;
+  const cy = h / 2;
+  waveCtx.clearRect(0, 0, w, h);
+
+  // Grid
+  waveCtx.strokeStyle = '#1e293b';
+  waveCtx.lineWidth = 0.5;
+  for (let x = 0; x < w; x += w/8) { waveCtx.beginPath(); waveCtx.moveTo(x, 0); waveCtx.lineTo(x, h); waveCtx.stroke(); }
+  for (let y = 0; y < h; y += h/6) { waveCtx.beginPath(); waveCtx.moveTo(0, y); waveCtx.lineTo(w, y); waveCtx.stroke(); }
+
+  // Zero line
+  waveCtx.strokeStyle = '#334155';
+  waveCtx.lineWidth = 1;
+  waveCtx.beginPath(); waveCtx.moveTo(0, cy); waveCtx.lineTo(w, cy); waveCtx.stroke();
+
+  // Signal
+  const f = faults[config.fault];
+  const amp = f.spectrum[0].a * 15;
+  const freq = config.rpm / 60;
+
+  waveCtx.strokeStyle = '#06b6d4';
+  waveCtx.lineWidth = 1.5;
+  waveCtx.beginPath();
+
+  for (let x = 0; x < w; x++) {
+    const t = (x / w) * 4 / freq + config.time;
+    let y = 0;
+
+    // Build waveform from spectrum
+    f.spectrum.forEach(p => {
+      y += p.a * Math.sin(2 * Math.PI * p.o * freq * t);
+    });
+
+    // Add fault-specific characteristics
+    if (config.fault === 'looseness') {
+      const val = Math.sin(2 * Math.PI * freq * t) + 0.5 * Math.sin(2 * Math.PI * 2 * freq * t);
+      y = Math.max(-1, Math.min(1, val)) * amp;
+    }
+    if (config.fault === 'cavitation') {
+      y += (Math.random() - 0.5) * 3;
+    }
+
+    waveCtx.lineTo(x, cy - y * (h / amp / 4));
+  }
+  waveCtx.stroke();
+
+  // RPM markers
+  waveCtx.fillStyle = '#475569';
+  waveCtx.font = '9px JetBrains Mono';
+  waveCtx.textAlign = 'center';
+  const period = w / 4;
+  for (let i = 0; i <= 4; i++) {
+    const x = i * period;
+    waveCtx.fillText((i * (60/config.rpm)).toFixed(2) + 's', x, h - 4);
+    waveCtx.strokeStyle = '#1e293b';
+    waveCtx.beginPath(); waveCtx.moveTo(x, 0); waveCtx.lineTo(x, h); waveCtx.stroke();
+  }
+}
+
+function drawFFT() {
+  const w = fftCanvas.width, h = fftCanvas.height;
+  const pad = { l: 35, r: 10, t: 25, b: 25 };
+  const gw = w - pad.l - pad.r, gh = h - pad.t - pad.b;
+
+  fftCtx.clearRect(0, 0, w, h);
+
+  // Grid
+  fftCtx.strokeStyle = '#1e293b';
+  fftCtx.lineWidth = 0.5;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.t + gh * (1 - i/5);
+    fftCtx.beginPath(); fftCtx.moveTo(pad.l, y); fftCtx.lineTo(w - pad.r, y); fftCtx.stroke();
+    fftCtx.fillStyle = '#475569';
+    fftCtx.font = '9px JetBrains Mono';
+    fftCtx.textAlign = 'right';
+    fftCtx.fillText((i * 2).toFixed(0), pad.l - 4, y + 3);
+  }
+
+  // Axis labels
+  fftCtx.fillStyle = '#64748b';
+  fftCtx.font = '10px Inter';
+  fftCtx.textAlign = 'center';
+  fftCtx.fillText('Orders (×RPM)', pad.l + gw/2, h - 4);
+
+  const f = faults[config.fault];
+  const maxAmp = Math.max(...f.spectrum.map(p => p.a)) * 1.2;
+  const barW = Math.max(8, gw / 12);
+
+  f.spectrum.forEach(p => {
+    if (p.o > 10) return;
+    const x = pad.l + (p.o / 10) * gw;
+    const barH = (p.a / maxAmp) * gh;
+    const y = pad.t + gh - barH;
+
+    const grad = fftCtx.createLinearGradient(0, y, 0, pad.t + gh);
+    if (p.label) {
+      grad.addColorStop(0, '#ef4444');
+      grad.addColorStop(1, 'rgba(239,68,68,0.1)');
+    } else if (p.o <= 1) {
+      grad.addColorStop(0, '#3b82f6');
+      grad.addColorStop(1, 'rgba(59,130,246,0.1)');
+    } else if (p.o <= 2) {
+      grad.addColorStop(0, '#eab308');
+      grad.addColorStop(1, 'rgba(234,179,8,0.1)');
+    } else {
+      grad.addColorStop(0, '#8b5cf6');
+      grad.addColorStop(1, 'rgba(139,92,246,0.1)');
+    }
+
+    fftCtx.fillStyle = grad;
+    fftCtx.fillRect(x - barW/2, y, barW, barH);
+
+    // Label
+    fftCtx.fillStyle = '#e2e8f0';
+    fftCtx.font = '10px JetBrains Mono';
+    fftCtx.textAlign = 'center';
+    const label = p.label || (p.o === 1 ? '1X' : p.o === 2 ? '2X' : p.o.toFixed(1) + 'X');
+    fftCtx.fillText(label, x, y - 5);
+  });
+}
+
+function drawPhase() {
+  const w = phaseCanvas.width, h = phaseCanvas.height;
+  const cx = w/2, cy = h/2;
+  const r = Math.min(w, h) * 0.35;
+
+  phaseCtx.clearRect(0, 0, w, h);
+
+  // Circle
+  phaseCtx.beginPath();
+  phaseCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  phaseCtx.strokeStyle = '#334155';
+  phaseCtx.lineWidth = 1;
+  phaseCtx.stroke();
+
+  // Cross
+  phaseCtx.strokeStyle = '#1e293b';
+  phaseCtx.beginPath();
+  phaseCtx.moveTo(cx - r - 5, cy); phaseCtx.lineTo(cx + r + 5, cy);
+  phaseCtx.moveTo(cx, cy - r - 5); phaseCtx.lineTo(cx, cy + r + 5);
+  phaseCtx.stroke();
+
+  const f = faults[config.fault];
+  const phaseA = 0;
+  const phaseB = f.phase + Math.sin(config.time) * (config.fault === 'looseness' ? 0.5 : 0.05);
+
+  // Point A (Motor)
+  const ax = cx + Math.cos(phaseA) * r;
+  const ay = cy + Math.sin(phaseA) * r;
+  phaseCtx.beginPath(); phaseCtx.arc(ax, ay, 6, 0, Math.PI*2);
+  phaseCtx.fillStyle = '#3b82f6'; phaseCtx.fill();
+  phaseCtx.strokeStyle = '#fff'; phaseCtx.lineWidth = 2; phaseCtx.stroke();
+
+  // Point B (Pump)
+  const bx = cx + Math.cos(phaseB) * r;
+  const by = cy + Math.sin(phaseB) * r;
+  phaseCtx.beginPath(); phaseCtx.arc(bx, by, 6, 0, Math.PI*2);
+  phaseCtx.fillStyle = '#ef4444'; phaseCtx.fill();
+  phaseCtx.strokeStyle = '#fff'; phaseCtx.lineWidth = 2; phaseCtx.stroke();
+
+  // Line between
+  phaseCtx.strokeStyle = '#475569';
+  phaseCtx.lineWidth = 1;
+  phaseCtx.setLineDash([3, 3]);
+  phaseCtx.beginPath(); phaseCtx.moveTo(ax, ay); phaseCtx.lineTo(bx, by); phaseCtx.stroke();
+  phaseCtx.setLineDash([]);
+
+  // Labels
+  phaseCtx.fillStyle = '#3b82f6';
+  phaseCtx.font = 'bold 10px Inter';
+  phaseCtx.textAlign = 'center';
+  phaseCtx.fillText('A (Motor)', ax, ay - 12);
+  phaseCtx.fillStyle = '#ef4444';
+  phaseCtx.fillText('B (Pump)', bx, by - 12);
+
+  // Phase angle
+  const deg = ((phaseB * 180 / Math.PI) + 360) % 360;
+  phaseCtx.fillStyle = '#94a3b8';
+  phaseCtx.font = '10px JetBrains Mono';
+  phaseCtx.fillText(`Δφ = ${deg.toFixed(0)}°`, cx, h - 5);
+}
+
+function drawOrbit() {
+  const w = orbitCanvas.width, h = orbitCanvas.height;
+  const cx = w/2, cy = h/2;
+
+  orbitCtx.clearRect(0, 0, w, h);
+
+  // Grid
+  orbitCtx.strokeStyle = '#1e293b';
+  orbitCtx.lineWidth = 0.5;
+  orbitCtx.beginPath();
+  orbitCtx.arc(cx, cy, Math.min(w,h)*0.4, 0, Math.PI*2);
+  orbitCtx.stroke();
+  orbitCtx.beginPath();
+  orbitCtx.arc(cx, cy, Math.min(w,h)*0.2, 0, Math.PI*2);
+  orbitCtx.stroke();
+
+  const f = faults[config.fault];
+  const scale = Math.min(w, h) * 0.03;
+  const ampH = f.spectrum[0].a * scale;
+  const ampV = f.dir === 'axial' ? f.spectrum[0].a * scale * 1.5 : f.spectrum[0].a * scale * 0.8;
+
+  orbitCtx.strokeStyle = '#10b981';
+  orbitCtx.lineWidth = 1.5;
+  orbitCtx.beginPath();
+
+  for (let i = 0; i <= 360; i++) {
+    const a = i * Math.PI / 180;
+    const t = config.time + a / (Math.PI * 2);
+    let x = ampH * Math.sin(2 * Math.PI * t);
+    let y = ampV * Math.sin(2 * Math.PI * t + f.phase);
+
+    if (config.fault === 'looseness') {
+      x += (Math.random() - 0.5) * ampH * 0.3;
+      y += (Math.random() - 0.5) * ampV * 0.3;
+    }
+
+    const px = cx + x;
+    const py = cy - y;
+    if (i === 0) orbitCtx.moveTo(px, py);
+    else orbitCtx.lineTo(px, py);
+  }
+  orbitCtx.closePath();
+  orbitCtx.stroke();
+
+  // Direction arrow
+  const startA = config.time * Math.PI * 2;
+  const sx = cx + ampH * Math.sin(startA) * 0.9;
+  const sy = cy - ampV * Math.sin(startA + f.phase) * 0.9;
+  orbitCtx.fillStyle = '#10b981';
+  orbitCtx.beginPath();
+  orbitCtx.arc(sx, sy, 4, 0, Math.PI*2);
+  orbitCtx.fill();
+}
+
+// ==================== UI UPDATES ====================
+function updateDiagnosis() {
+  const f = faults[config.fault];
+  const panel = document.getElementById('diagPanel');
+
+  const sevColors = { A: 'green', B: 'yellow', C: 'orange', D: 'red' };
+  const sevBg = { A: 'bg-green-500/10 border-green-500/30', B: 'bg-yellow-500/10 border-yellow-500/30', C: 'bg-orange-500/10 border-orange-500/30', D: 'bg-red-500/10 border-red-500/30' };
+  const sevText = { A: 'text-green-400', B: 'text-yellow-400', C: 'text-orange-400', D: 'text-red-400' };
+
+  panel.innerHTML = `
+    <div class="${sevBg[f.severity]} border rounded-lg p-3 result-card">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="pulse-dot ${sevColors[f.severity]}"></span>
+        <span class="text-sm font-bold ${sevText[f.severity]}">${f.icon} ${f.name}</span>
+      </div>
+      <p class="text-xs text-gray-400 leading-relaxed">${f.desc}</p>
+    </div>
+  `;
+
+  // Peak values
+  const peakMap = { 1: 'peak1X', 2: 'peak2X', 3: 'peak3X', 4: 'peak4X' };
+  Object.entries(peakMap).forEach(([order, id]) => {
+    const peak = f.spectrum.find(p => Math.abs(p.o - order) < 0.1);
+    document.getElementById(id).textContent = peak ? peak.a.toFixed(2) + ' mm/s' : '0.01 mm/s';
+    document.getElementById(id).className = peak && peak.a > 2 ? 'mono text-xs font-bold text-red-400' : 'mono text-xs font-bold text-gray-400';
+  });
+
+  const maxPeak = Math.max(...f.spectrum.map(p => p.a));
+  document.getElementById('peakMax').textContent = maxPeak.toFixed(2) + ' mm/s';
+  document.getElementById('peakMax').className = maxPeak > 3 ? 'mono text-xs font-bold text-red-400' : 'mono text-xs font-bold text-blue-400';
+
+  // Overall
+  document.getElementById('overallDisplay').textContent = f.overall.toFixed(1) + ' mm/s';
+  document.getElementById('overallDisplay').className = 'mono text-sm font-bold ' + (f.overall > 5 ? 'text-red-400' : f.overall > 3 ? 'text-yellow-400' : 'text-green-400');
+
+  // Severity
+  document.getElementById('severityValue').textContent = f.overall.toFixed(1);
+  document.getElementById('severityValue').className = 'mono text-2xl font-bold ' + (f.severity === 'D' ? 'text-red-400' : f.severity === 'C' ? 'text-orange-400' : f.severity === 'B' ? 'text-yellow-400' : 'text-green-400');
+  document.getElementById('severityZone').textContent = 'ZONE ' + f.severity;
+  document.getElementById('severityZone').className = 'mt-1 inline-block px-2 py-0.5 rounded text-xs font-bold ' +
+    (f.severity === 'A' ? 'bg-green-500/20 text-green-400' : f.severity === 'B' ? 'bg-yellow-500/20 text-yellow-400' : f.severity === 'C' ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400');
+
+  // Rekomendasi
+  const recPanel = document.getElementById('recommendations');
+  recPanel.innerHTML = f.recs.map(r => `
+    <div class="flex items-start gap-2 py-2">
+      <span class="${f.severity === 'D' ? 'text-red-400' : f.severity === 'C' ? 'text-orange-400' : 'text-green-400'} mt-0.5">
+        ${f.severity === 'D' ? '⚠️' : f.severity === 'C' ? '🔧' : '✓'}
+      </span>
+      <span class="text-xs text-gray-400">${r}</span>
+    </div>
+  `).join('');
+
+  // Status
+  const statusText = document.getElementById('statusText');
+  const statusDot = document.querySelector('.pulse-dot');
+  if (f.severity === 'D') {
+    statusText.textContent = 'ALARM - FAULT DETECTED';
+    statusText.className = 'text-xs font-semibold text-red-400';
+  } else if (f.severity === 'C') {
+    statusText.textContent = 'WARNING';
+    statusText.className = 'text-xs font-semibold text-orange-400';
+  } else if (f.severity === 'B') {
+    statusText.textContent = 'MONITOR';
+    statusText.className = 'text-xs font-semibold text-yellow-400';
+  } else {
+    statusText.textContent = 'SYSTEM NORMAL';
+    statusText.className = 'text-xs font-semibold text-green-400';
+  }
+
+  // Info
+  const rpmHz = config.rpm / 60;
+  document.getElementById('infoRpm').textContent = config.rpm + ' RPM';
+  document.getElementById('info1X').textContent = rpmHz.toFixed(1) + ' Hz';
+  document.getElementById('infoBPF').textContent = (rpmHz * 6).toFixed(0) + ' Hz (6 vanes)';
+}
+
+// ==================== INTERACTIONS ====================
+function updateParam(type, value) {
+  config[type] = parseInt(value);
+  document.getElementById(type + 'Val').textContent = value;
+  document.getElementById(type + 'Display').textContent = type === 'rpm' ? value : value + '%';
+  if (type === 'rpm') updateDiagnosis();
+}
+
+function setFault(fault, btn) {
+  config.fault = fault;
+  document.querySelectorAll('#faultGrid .btn-fault').forEach(b => {
+    b.classList.remove('active');
+    b.classList.add('text-gray-400');
+  });
+  btn.classList.add('active');
+  btn.classList.remove('text-gray-400');
+  updateDiagnosis();
+}
+
+function setDirection(dir, btn) {
+  config.direction = dir;
+  document.querySelectorAll('#dirRadial,#dirAxial,#dirBoth').forEach(b => {
+    b.classList.remove('active');
+    b.classList.add('text-gray-400');
+  });
+  btn.classList.add('active');
+  btn.classList.remove('text-gray-400');
+}
+
+function switchTab(tab) {
+  config.currentTab = tab;
+  document.querySelectorAll('nav button').forEach((b, i) => {
+    const tabs = ['sim', 'analysis', 'ai', 'equipment', 'reference'];
+    if (tabs[i] === tab) {
+      b.className = 'px-5 py-2 rounded-lg text-xs font-semibold tab-active';
+    } else {
+      b.className = 'px-5 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-gray-400 hover:text-white transition';
+    }
+  });
+  document.getElementById('simView').classList.toggle('hidden', tab !== 'sim');
+  document.getElementById('analysisView').classList.toggle('hidden', tab !== 'analysis');
+  document.getElementById('aiView').classList.toggle('hidden', tab !== 'ai');
+  document.getElementById('equipmentView').classList.toggle('hidden', tab !== 'equipment');
+  document.getElementById('referenceView').classList.toggle('hidden', tab !== 'reference');
+  if (tab === 'sim') setTimeout(resizeCharts, 100);
+  if (tab === 'equipment') renderEquipment();
+  if (tab === 'reference') buildReference();
+}
+
+// ==================== BEARING CALCULATOR ====================
+function calcBearing() {
+  const input = document.getElementById('bearingModel').value.toUpperCase().trim();
+  let model = input.replace(/\s/g, '').replace('SKF', '').replace('FAG', '').replace('NSK', '').replace('NTN', '');
+
+  if (bearingDB[model]) {
+    const b = bearingDB[model];
+    const rpm = config.rpm / 60;
+    document.getElementById('bpfoVal').textContent = (b.BPFO * rpm).toFixed(1) + ' Hz';
+    document.getElementById('bpfiVal').textContent = (b.BPFI * rpm).toFixed(1) + ' Hz';
+    document.getElementById('ftfVal').textContent = (b.FTF * rpm).toFixed(2) + ' Hz';
+    document.getElementById('bsfVal').textContent = (b.BSF * rpm).toFixed(1) + ' Hz';
+  } else {
+    ['bpfoVal','bpfiVal','ftfVal','bsfVal'].forEach(id => document.getElementById(id).textContent = '-');
+    // Estimate from model number
+    const match = model.match(/(\d{2})(\d{2})/);
+    if (match) {
+      const series = parseInt(match[1]);
+      const bore = parseInt(match[2]) * 5;
+      // Rough estimate
+      const rpm = config.rpm / 60;
+      document.getElementById('bpfoVal').textContent = (3.57 * rpm).toFixed(1) + ' Hz';
+      document.getElementById('bpfiVal').textContent = (5.43 * rpm).toFixed(1) + ' Hz';
+      document.getElementById('ftfVal').textContent = (0.40 * rpm).toFixed(2) + ' Hz';
+      document.getElementById('bsfVal').textContent = (2.39 * rpm).toFixed(1) + ' Hz';
+    }
+  }
+}
+
+// ==================== AI PHOTO MULTI ANALYSIS ====================
+let aiUploads = [];
+let aiUploadId = 0;
+
+function setupMultiUpload() {
+  const zone = document.getElementById('uploadZone');
+  if (!zone) return;
+  ['dragenter','dragover'].forEach(evt => zone.addEventListener(evt, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.add('dragover');
+  }));
+  ['dragleave','drop'].forEach(evt => zone.addEventListener(evt, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.remove('dragover');
+  }));
+  zone.addEventListener('drop', e => addUploadFiles(e.dataTransfer.files));
+}
+
+function handlePhotoUpload(input) {
+  addUploadFiles(input.files);
+  input.value = '';
+}
+
+function addUploadFiles(fileList) {
+  const files = Array.from(fileList || []).filter(file => file.type.startsWith('image/'));
+  if (!files.length) return;
+
+  files.forEach(file => {
+    const reader = new FileReader();
+    const id = ++aiUploadId;
+    reader.onload = e => {
+      aiUploads.push({
+        id,
+        name: file.name,
+        src: e.target.result,
+        type: guessUploadType(file.name),
+        bearing: guessBearing(file.name),
+        direction: 'radial'
+      });
+      renderUploadCards();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function guessUploadType(name) {
+  const n = String(name).toLowerCase();
+  if (n.includes('wave') || n.includes('time') || n.includes('twm')) return 'Waveform';
+  return 'Spectrum';
+}
+
+function guessBearing(name) {
+  const n = String(name).toLowerCase();
+  const match = n.match(/(?:bearing|brg|br|b)[\s_-]*([1-4])|(?:de|nde|inboard|outboard)/);
+  if (!match) return '1';
+  if (match[1]) return match[1];
+  if (n.includes('nde') || n.includes('outboard')) return '2';
+  return '1';
+}
+
+function renderUploadCards() {
+  const preview = document.getElementById('photoPreview');
+  const zone = document.getElementById('uploadZone');
+  const grid = document.getElementById('previewGrid');
+  const summary = document.getElementById('uploadSummary');
+  if (!preview || !zone || !grid) return;
+
+  const hasFiles = aiUploads.length > 0;
+  preview.classList.toggle('hidden', !hasFiles);
+  zone.classList.toggle('hidden', hasFiles);
+  if (!hasFiles) return;
+
+  const bearings = ['1','2','3','4'].map(b => {
+    const items = aiUploads.filter(u => u.bearing === b);
+    const spectrum = items.filter(u => u.type === 'Spectrum').length;
+    const waveform = items.filter(u => u.type === 'Waveform').length;
+    return { b, total: items.length, spectrum, waveform };
+  });
+
+  summary.innerHTML = bearings.map(x => `
+    <div class="bg-gray-800/50 border border-gray-700 rounded-xl p-3">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs text-gray-400">Bearing ${x.b}</span>
+        <span class="mono text-sm font-bold ${x.total ? 'text-green-400' : 'text-gray-600'}">${x.total}</span>
+      </div>
+      <div class="text-[10px] text-gray-500">Spectrum: ${x.spectrum} • Waveform: ${x.waveform}</div>
+    </div>
+  `).join('');
+
+  grid.innerHTML = aiUploads.map(item => `
+    <div class="bg-gray-900/70 border border-gray-700 rounded-xl overflow-hidden result-card">
+      <div class="relative h-40 bg-black/30 flex items-center justify-center">
+        <img src="${item.src}" class="max-h-40 max-w-full object-contain" alt="${item.name}">
+        <button class="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center text-white hover:bg-red-400" onclick="removeUpload(${item.id})">✕</button>
+      </div>
+      <div class="p-3 space-y-2">
+        <div class="text-xs font-semibold text-gray-300 truncate" title="${item.name}">${item.name}</div>
+        <div class="grid grid-cols-2 gap-2">
+          <select class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-white" onchange="updateUploadMeta(${item.id}, 'type', this.value)">
+            <option value="Spectrum" ${item.type === 'Spectrum' ? 'selected' : ''}>Spectrum</option>
+            <option value="Waveform" ${item.type === 'Waveform' ? 'selected' : ''}>Waveform</option>
+          </select>
+          <select class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-white" onchange="updateUploadMeta(${item.id}, 'bearing', this.value)">
+            <option value="1" ${item.bearing === '1' ? 'selected' : ''}>Bearing 1</option>
+            <option value="2" ${item.bearing === '2' ? 'selected' : ''}>Bearing 2</option>
+            <option value="3" ${item.bearing === '3' ? 'selected' : ''}>Bearing 3</option>
+            <option value="4" ${item.bearing === '4' ? 'selected' : ''}>Bearing 4</option>
+          </select>
+        </div>
+        <select class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-white" onchange="updateUploadMeta(${item.id}, 'direction', this.value)">
+          <option value="radial" ${item.direction === 'radial' ? 'selected' : ''}>Radial</option>
+          <option value="axial" ${item.direction === 'axial' ? 'selected' : ''}>Axial</option>
+          <option value="horizontal" ${item.direction === 'horizontal' ? 'selected' : ''}>Horizontal</option>
+          <option value="vertical" ${item.direction === 'vertical' ? 'selected' : ''}>Vertical</option>
+        </select>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateUploadMeta(id, key, value) {
+  const item = aiUploads.find(u => u.id === id);
+  if (!item) return;
+  item[key] = value;
+  renderUploadCards();
+}
+
+function removeUpload(id) {
+  aiUploads = aiUploads.filter(u => u.id !== id);
+  renderUploadCards();
+}
+
+function removePhoto() {
+  aiUploads = [];
+  document.getElementById('photoInput').value = '';
+  document.getElementById('photoPreview').classList.add('hidden');
+  document.getElementById('uploadZone').classList.remove('hidden');
+  document.getElementById('previewGrid').innerHTML = '';
+  document.getElementById('uploadSummary').innerHTML = '';
+}
+
+function startAIAnalysis() {
+  if (!aiUploads.length) {
+    alert('Upload minimal satu image spectrum atau waveform terlebih dahulu.');
+    return;
+  }
+  const modal = document.getElementById('aiModal');
+  modal.classList.add('show');
+
+  const spectrumCount = aiUploads.filter(u => u.type === 'Spectrum').length;
+  const waveformCount = aiUploads.filter(u => u.type === 'Waveform').length;
+  const bearingCount = new Set(aiUploads.map(u => u.bearing)).size;
+  const steps = [
+    `Loading ${aiUploads.length} image data...`,
+    `Classifying ${spectrumCount} spectrum dan ${waveformCount} waveform...`,
+    `Mapping data ke ${bearingCount} bearing position...`,
+    'Detecting spectrum grid lines...',
+    'Extracting signal trace...',
+    'Identifying peak frequencies...',
+    'Calculating harmonic ratios...',
+    'Matching terhadap database Mobius...',
+    'Finalizing diagnosis...'
+  ];
+
+  let step = 0;
+  document.getElementById('modalProgress').style.width = '0%';
+  document.getElementById('modalScanText').textContent = steps[0];
+  const interval = setInterval(() => {
+    step++;
+    document.getElementById('modalProgress').style.width = (step / steps.length * 100) + '%';
+    if (step < steps.length) {
+      document.getElementById('modalScanText').textContent = steps[step];
+    } else {
+      clearInterval(interval);
+      modal.classList.remove('show');
+      showAIResult();
+    }
+  }, 500);
+}
+
+function showAIResult() {
+  const spectrumCount = aiUploads.filter(u => u.type === 'Spectrum').length;
+  const waveformCount = aiUploads.filter(u => u.type === 'Waveform').length;
+  const bearingSet = new Set(aiUploads.map(u => u.bearing));
+  const hasBearingWords = aiUploads.some(u => /bearing|brg|bpfo|bpfi|ftf|bsf/i.test(u.name));
+
+  let detected = 'unbalance';
+  if (bearingSet.size >= 3 || hasBearingWords) detected = 'bearing';
+  else if (waveformCount > spectrumCount) detected = 'looseness';
+  else if (spectrumCount >= 2 && aiUploads.some(u => u.direction === 'axial')) detected = 'misalignment';
+
+  const f = faults[detected];
+  const confidence = Math.min(97, 82 + aiUploads.length * 2 + bearingSet.size * 3 + (spectrumCount && waveformCount ? 4 : 0));
+
+  document.getElementById('aiFaultName').textContent = f.icon + ' ' + f.name;
+  document.getElementById('aiFaultDesc').textContent = f.desc;
+  document.getElementById('aiConfidence').textContent = confidence + '%';
+
+  const evidence = [
+    { label: 'Total Image', value: aiUploads.length + ' file', match: aiUploads.length > 1 },
+    { label: 'Spectrum / Waveform', value: spectrumCount + ' / ' + waveformCount, match: spectrumCount > 0 && waveformCount > 0 },
+    { label: 'Bearing Position', value: Array.from(bearingSet).sort().map(b => 'B' + b).join(', '), match: bearingSet.size >= 2 },
+    { label: 'Dominant RPM', value: '1X RPM (' + (config.rpm/60).toFixed(1) + ' Hz)', match: detected === 'unbalance' },
+    { label: 'Bearing Frequencies', value: hasBearingWords ? 'BPFO/BPFI terms detected' : 'Calculated by bearing position', match: detected === 'bearing' },
+  ];
+
+  document.getElementById('aiEvidence').innerHTML = evidence.map(e => `
+    <div class="flex items-center justify-between py-2 px-3 bg-gray-800/50 rounded-lg">
+      <span class="text-xs text-gray-400">${e.label}</span>
+      <div class="flex items-center gap-2">
+        <span class="text-xs mono text-gray-300">${e.value}</span>
+        ${e.match ? '<span class="text-green-400 text-xs">✓</span>' : ''}
+      </div>
+    </div>
+  `).join('');
+
+  const coverage = ['1','2','3','4'].map(b => {
+    const items = aiUploads.filter(u => u.bearing === b);
+    const ok = items.length > 0;
+    return `
+      <div class="rounded-lg p-3 border ${ok ? 'bg-green-500/10 border-green-500/30' : 'bg-gray-800/50 border-gray-700'}">
+        <div class="text-xs font-bold ${ok ? 'text-green-400' : 'text-gray-500'}">Bearing ${b}</div>
+        <div class="text-[10px] text-gray-500 mt-1">${items.length} image</div>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('bearingCoverage').innerHTML = coverage;
+
+  document.getElementById('aiResult').classList.remove('hidden');
+  document.getElementById('aiResultContent').classList.remove('hidden');
+  document.getElementById('aiScanProgress').classList.add('hidden');
+  document.getElementById('aiResult').dataset.fault = detected;
+}
+
+function applyAIResult() {
+  const detected = document.getElementById('aiResult').dataset.fault;
+  if (detected) {
+    switchTab('sim');
+    const btn = document.querySelector(`#faultGrid button[onclick*="${detected}"]`);
+    if (btn) setFault(detected, btn);
+  }
+  resetAI();
+}
+
+function resetAI() {
+  document.getElementById('aiResult').classList.add('hidden');
+  document.getElementById('aiResultContent').classList.add('hidden');
+  document.getElementById('aiScanProgress').classList.remove('hidden');
+  document.getElementById('modalProgress').style.width = '0%';
+  document.getElementById('modalScanText').textContent = 'Processing image data...';
+  removePhoto();
+}
+
+
+// ==================== SPECTRUM ANALYSIS ====================
+function toOrder(value, freq, rpmHz) {
+  const parsed = parseFloat(value);
+  if (!Number.isNaN(parsed)) return parsed;
+  if (Number.isFinite(freq) && rpmHz > 0) return freq / rpmHz;
+  return NaN;
+}
+let peakCount = 3;
+function addPeakRow() {
+  const container = document.getElementById('peakList');
+  const row = document.createElement('div');
+  row.className = 'flex gap-2 items-center';
+  row.innerHTML = `
+    <input type="number" step="0.1" placeholder="Freq (Hz)" class="peak-freq flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 focus:outline-none">
+    <input type="number" step="0.01" placeholder="Amp (mm/s)" class="peak-amp flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 focus:outline-none">
+    <select class="peak-order w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-white focus:border-blue-500 focus:outline-none">
+      <option value="">Order</option>
+      <option value="0.5">0.5X</option>
+      <option value="1">1X</option>
+      <option value="2">2X</option>
+      <option value="3">3X</option>
+      <option value="4">4X</option>
+      <option value="other">Other</option>
+    </select>
+    <button onclick="this.parentElement.remove()" class="w-8 h-8 bg-red-500/20 hover:bg-red-500/40 rounded-lg text-red-400 flex items-center justify-center text-sm transition">✕</button>
+  `;
+  container.appendChild(row);
+  peakCount++;
+}
+
+function analyzeSpectrum() {
+  const rpm = parseInt(document.getElementById('analysisRpm').value) || 1470;
+  const dir = document.getElementById('analysisDir').value;
+  const rpmHz = rpm / 60;
+
+  const rows = document.querySelectorAll('#peakList > div');
+  const peaks = [];
+  rows.forEach(row => {
+    const freq = parseFloat(row.querySelector('.peak-freq').value);
+    const amp = parseFloat(row.querySelector('.peak-amp').value);
+    const order = row.querySelector('.peak-order').value;
+    if (!isNaN(freq) && !isNaN(amp)) {
+      peaks.push({ freq, amp, order });
+    }
+  });
+
+  if (peaks.length === 0) {
+    alert('Masukkan minimal satu peak.');
+    return;
+  }
+
+  // Analyze
+  const results = [];
+  const maxAmp = Math.max(...peaks.map(p => p.amp));
+  const dominantPeak = peaks.find(p => p.amp === maxAmp);
+  const dominantOrder = toOrder(dominantPeak.order, dominantPeak.freq, rpmHz).toFixed(1);
+
+  // Score each fault type
+  const scores = Object.entries(faults).map(([key, f]) => {
+    let score = 0;
+    let evidence = [];
+
+    // Check dominant frequency
+    const is1X = peaks.some(p => {
+      const o = toOrder(p.order, p.freq, rpmHz);
+      return Math.abs(o - 1) < 0.3 && p.amp > maxAmp * 0.7;
+    });
+    const is2X = peaks.some(p => {
+      const o = toOrder(p.order, p.freq, rpmHz);
+      return Math.abs(o - 2) < 0.3 && p.amp > maxAmp * 0.5;
+    });
+    const hasHarmonics = peaks.filter(p => {
+      const o = toOrder(p.order, p.freq, rpmHz);
+      return Math.abs(o - Math.round(o)) < 0.2 && Math.round(o) > 1;
+    }).length >= 3;
+    const hasNonSync = peaks.some(p => {
+      const o = toOrder(p.order, p.freq, rpmHz);
+      return Math.abs(o - Math.round(o)) > 0.3 && o > 1.5;
+    });
+
+    switch(key) {
+      case 'unbalance':
+        if (is1X) { score += 3; evidence.push('1X dominant ✓'); }
+        if (dir === 'radial') { score += 1; evidence.push('Radial measurement ✓'); }
+        if (!is2X) { score += 1; evidence.push('Low 2X confirms ✓'); }
+        break;
+      case 'misalignment':
+        if (is2X) { score += 3; evidence.push('2X significant ✓'); }
+        if (dir === 'axial') { score += 2; evidence.push('High axial vibration ✓'); }
+        if (peaks.some(p => { const o = toOrder(p.order, p.freq, rpmHz); return Math.abs(o-3) < 0.3 && p.amp > 1; })) { score += 1; evidence.push('3X present ✓'); }
+        break;
+      case 'looseness':
+        if (hasHarmonics) { score += 3; evidence.push('Multiple harmonics ✓'); }
+        if (peaks.some(p => { const o = toOrder(p.order, p.freq, rpmHz); return o >= 0.4 && o <= 0.6; })) { score += 2; evidence.push('Sub-harmonic detected ✓'); }
+        break;
+      case 'bearing':
+        if (hasNonSync) { score += 3; evidence.push('Non-synchronous peaks ✓'); }
+        break;
+      case 'resonance':
+        if (peaks.some(p => { const o = toOrder(p.order, p.freq, rpmHz); return o > 1.2 && o < 3 && p.amp > maxAmp * 0.8; })) { score += 3; evidence.push('Amplification peak ✓'); }
+        break;
+      case 'cavitation':
+        if (peaks.some(p => p.freq > 1000)) { score += 2; evidence.push('High frequency content ✓'); }
+        break;
+      case 'electrical':
+        if (peaks.some(p => Math.abs(p.freq - 100) < 5 || Math.abs(p.freq - 120) < 5)) { score += 3; evidence.push('2×LF detected ✓'); }
+        break;
+      case 'normal':
+        if (maxAmp < 1 && peaks.length <= 2) { score += 3; evidence.push('Low levels, few peaks ✓'); }
+        break;
+    }
+
+    return { key, name: f.name, icon: f.icon, score, evidence, desc: f.desc };
+  });
+
+  scores.sort((a, b) => b.score - a.score);
+  const maxScore = Math.max(...scores.map(s => s.score), 1);
+
+  const resultsContainer = document.getElementById('resultsList');
+  resultsContainer.innerHTML = scores.slice(0, 4).map((r, i) => {
+    const pct = Math.round(r.score / maxScore * 100);
+    const barColor = i === 0 ? '#3b82f6' : '#6b7280';
+    return `
+      <div class="result-card bg-gray-800/50 rounded-xl p-4 border ${i === 0 ? 'border-blue-500/50' : 'border-gray-700'}">
+        <div class="flex justify-between items-start mb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">${r.icon}</span>
+            <span class="text-sm font-bold ${i === 0 ? 'text-white' : 'text-gray-400'}">${r.name}</span>
+          </div>
+          <span class="text-lg font-bold ${pct > 70 ? 'text-green-400' : pct > 40 ? 'text-yellow-400' : 'text-gray-500'}">${pct}%</span>
+        </div>
+        <div class="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+          <div class="h-1.5 rounded-full transition-all duration-500" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+        ${r.evidence.length ? `
+          <div class="flex flex-wrap gap-1 mt-2">
+            ${r.evidence.map(e => `<span class="px-2 py-0.5 bg-green-500/10 text-green-400 rounded text-[10px]">${e}</span>`).join('')}
+          </div>
+        ` : ''}
+        ${i === 0 ? `<p class="text-xs text-gray-400 mt-2">${r.desc}</p>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('analysisResults').classList.remove('hidden');
+}
+
+
+
+// ==================== EQUIPMENT DATA DATE SELECTOR ====================
+const monthNamesId = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function parseDatasetKey(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  return { year, month, day };
+}
+function fillSelectOptions(select, values, formatter) {
+  if (!select) return;
+  select.innerHTML = values.map(v => `<option value="${v}">${formatter ? formatter(v) : v}</option>`).join('');
+}
+function initEquipmentDateSelector() {
+  const daySelect = document.getElementById('eqDateDay');
+  const monthSelect = document.getElementById('eqDateMonth');
+  const yearSelect = document.getElementById('eqDateYear');
+  if (!daySelect || daySelect.dataset.ready) return;
+  const keys = Object.keys(equipmentDatasets).sort().reverse();
+  const parsed = keys.map(parseDatasetKey);
+  const days = [...new Set(parsed.map(d => String(d.day).padStart(2, '0')))].sort((a,b)=>Number(a)-Number(b));
+  const months = [...new Set(parsed.map(d => String(d.month).padStart(2, '0')))].sort((a,b)=>Number(a)-Number(b));
+  const years = [...new Set(parsed.map(d => String(d.year)))].sort((a,b)=>Number(b)-Number(a));
+  fillSelectOptions(daySelect, days, v => v);
+  fillSelectOptions(monthSelect, months, v => monthNamesId[Number(v)-1]);
+  fillSelectOptions(yearSelect, years, v => v);
+  const active = parseDatasetKey(activeEquipmentDatasetKey);
+  daySelect.value = String(active.day).padStart(2, '0');
+  monthSelect.value = String(active.month).padStart(2, '0');
+  yearSelect.value = String(active.year);
+  daySelect.dataset.ready = '1';
+  updateEquipmentDatasetInfo();
+}
+function getSelectedDatasetKey() {
+  const day = document.getElementById('eqDateDay')?.value || '01';
+  const month = document.getElementById('eqDateMonth')?.value || '01';
+  const year = document.getElementById('eqDateYear')?.value || '2026';
+  return `${year}-${month}-${day}`;
+}
+function updateEquipmentDatasetInfo() {
+  const ds = equipmentDatasets[activeEquipmentDatasetKey];
+  const desc = document.getElementById('eqDatasetDesc');
+  const active = document.getElementById('eqActiveDataset');
+  const source = document.getElementById('eqDatasetSource');
+  if (!ds) return;
+  if (desc) desc.textContent = `Data vibration velocity ${ds.monthLabel} — pilih tanggal, bulan, dan tahun untuk mengganti data yang tampil.`;
+  if (active) active.textContent = `${ds.label} • ${ds.data.length} equipment`;
+  if (source) source.textContent = `Sumber: ${ds.source}`;
+}
+function changeEquipmentDataset() {
+  const key = getSelectedDatasetKey();
+  const ds = equipmentDatasets[key];
+  const active = document.getElementById('eqActiveDataset');
+  const source = document.getElementById('eqDatasetSource');
+  if (!ds) {
+    equipmentData = [];
+    if (active) active.textContent = 'Tidak ada data untuk tanggal ini';
+    if (source) source.textContent = 'Pilih tanggal yang tersedia atau tambahkan dataset baru ke equipmentDatasets.';
+    const unitSelect = document.getElementById('eqUnitFilter');
+    if (unitSelect) { unitSelect.dataset.ready = ''; unitSelect.innerHTML = '<option value="ALL">Semua Unit</option>'; }
+    renderEquipment();
+    return;
+  }
+  activeEquipmentDatasetKey = key;
+  equipmentData = ds.data;
+  const unitSelect = document.getElementById('eqUnitFilter');
+  if (unitSelect) unitSelect.dataset.ready = '';
+  updateEquipmentDatasetInfo();
+  renderEquipment();
+}
+
+// ==================== EQUIPMENT DATA DASHBOARD ====================
+function statusClass(status) {
+  const map = {
+    'ALARM': 'bg-red-500/20 text-red-400 border-red-500/40',
+    'WARNING': 'bg-orange-500/20 text-orange-400 border-orange-500/40',
+    'PREWARNING': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
+    'NORMAL': 'bg-green-500/20 text-green-400 border-green-500/40',
+    'STAND BY': 'bg-gray-500/20 text-gray-400 border-gray-500/40'
+  };
+  return map[status] || 'bg-gray-500/20 text-gray-400 border-gray-500/40';
+}
+function highestPoint(row) {
+  let best = {label: '-', value: -Infinity};
+  row.values.forEach((v, i) => {
+    if (typeof v === 'number' && v > best.value) best = {label: measurementLabels[i] || '-', value: v};
+  });
+  return best.value === -Infinity ? {label:'-', value:null} : best;
+}
+function recommendationFor(row) {
+  const hp = highestPoint(row);
+  if (row.status === 'ALARM') return 'Segera lakukan detailed diagnosis: spectrum, time waveform, phase, dan planning corrective maintenance.';
+  if (row.status === 'WARNING') return 'Prioritaskan inspection dan ambil data spectrum/phase pada point ' + hp.label + '.';
+  if (row.status === 'PREWARNING') return 'Naikkan frequency monitoring dan lakukan trend analysis pada point ' + hp.label + '.';
+  if (row.status === 'STAND BY') return 'Pastikan preservation dan test run sesuai schedule.';
+  return 'Lanjutkan routine condition monitoring.';
+}
+function initEquipmentFilters() {
+  const unitSelect = document.getElementById('eqUnitFilter');
+  if (!unitSelect || unitSelect.dataset.ready) return;
+  const units = ['ALL', ...Array.from(new Set(equipmentData.map(r => r.unit))).filter(Boolean)];
+  unitSelect.innerHTML = units.map(u => `<option value="${u}">${u === 'ALL' ? 'Semua Unit' : u}</option>`).join('');
+  unitSelect.dataset.ready = '1';
+}
+function filteredEquipment() {
+  initEquipmentFilters();
+  const unit = document.getElementById('eqUnitFilter')?.value || 'ALL';
+  const status = document.getElementById('eqStatusFilter')?.value || 'ALL';
+  const q = (document.getElementById('eqSearch')?.value || '').toLowerCase();
+  return equipmentData.filter(r =>
+    (unit === 'ALL' || r.unit === unit) &&
+    (status === 'ALL' || r.status === status) &&
+    (!q || (r.equipment + ' ' + r.unit + ' ' + (r.group || '')).toLowerCase().includes(q))
+  );
+}
+function renderEquipmentCards(rows) {
+  const counts = rows.reduce((acc, r) => (acc[r.status] = (acc[r.status] || 0) + 1, acc), {});
+  const items = [
+    ['ALARM', counts.ALARM || 0, 'text-red-400'],
+    ['WARNING', counts.WARNING || 0, 'text-orange-400'],
+    ['PREWARNING', counts.PREWARNING || 0, 'text-yellow-400'],
+    ['NORMAL', counts.NORMAL || 0, 'text-green-400'],
+    ['STAND BY', counts['STAND BY'] || 0, 'text-gray-400']
+  ];
+  document.getElementById('eqCards').innerHTML = items.map(([label, count, cls]) => `
+    <div class="glass rounded-xl p-4">
+      <div class="text-[10px] text-gray-500 uppercase tracking-wider">${label}</div>
+      <div class="mono text-2xl font-bold ${cls}">${count}</div>
+    </div>
+  `).join('');
+}
+function renderEquipmentTable(rows) {
+  const tbody = document.getElementById('eqTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-gray-500">Tidak ada data untuk tanggal/filter ini.</td></tr>'; return; }
+  tbody.innerHTML = rows.sort((a,b)=>(b.vibMax||0)-(a.vibMax||0)).map(r => {
+    const hp = highestPoint(r);
+    return `<tr class="border-b border-gray-800 hover:bg-gray-800/40">
+      <td class="p-2 text-gray-400 whitespace-nowrap">${r.unit || '-'}</td>
+      <td class="p-2 text-white font-semibold">${r.equipment}</td>
+      <td class="p-2 text-gray-400 whitespace-nowrap">${r.group || '-'}</td>
+      <td class="p-2 text-right mono font-bold ${(r.vibMax||0) >= 7.1 ? 'text-red-400' : (r.vibMax||0) >= 4.5 ? 'text-orange-400' : (r.vibMax||0) >= 2.4 ? 'text-yellow-400' : 'text-green-400'}">${(r.vibMax ?? 0).toFixed(2)} mm/s</td>
+      <td class="p-2"><span class="inline-block px-2 py-0.5 rounded border ${statusClass(r.status)}">${r.status}</span></td>
+      <td class="p-2 mono text-gray-300 whitespace-nowrap">${hp.label}${hp.value !== null ? ' = ' + hp.value.toFixed(2) : ''}</td>
+      <td class="p-2 text-gray-400 min-w-[260px]">${recommendationFor(r)}</td>
+    </tr>`;
+  }).join('');
+}
+function renderEquipmentPriority(rows) {
+  const priority = rows.filter(r => ['ALARM','WARNING'].includes(r.status)).sort((a,b)=>(b.vibMax||0)-(a.vibMax||0)).slice(0,5);
+  document.getElementById('eqPriority').innerHTML = priority.length ? priority.map((r,i)=>`
+    <div class="p-2 rounded-lg bg-gray-800/60 border border-gray-700">
+      <div class="flex justify-between gap-2"><span class="font-semibold text-white">${i+1}. ${r.equipment}</span><span class="mono ${(r.status==='ALARM')?'text-red-400':'text-orange-400'}">${r.vibMax.toFixed(2)}</span></div>
+      <div class="text-gray-500 mt-1">${r.unit} • ${r.status}</div>
+    </div>
+  `).join('') : '<div class="text-gray-500">Tidak ada equipment ALARM/WARNING pada filter ini.</div>';
+}
+function renderEquipmentChart(rows) {
+  const canvas = document.getElementById('eqBarCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const parent = canvas.parentElement;
+  canvas.width = parent.clientWidth - 32;
+  canvas.height = 170;
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+  const top = rows.filter(r => r.vibMax !== null).sort((a,b)=>b.vibMax-a.vibMax).slice(0,8);
+  if (!top.length) { ctx.fillStyle = '#94a3b8'; ctx.font = '12px Inter'; ctx.fillText('Tidak ada data untuk filter/tanggal ini.', 12, 32); return; }
+  const max = Math.max(...top.map(r=>r.vibMax), 1);
+  const barH = 14, gap = 6;
+  ctx.font = '10px Inter';
+  top.forEach((r,i)=>{
+    const y = i*(barH+gap)+8;
+    const label = r.equipment.length > 24 ? r.equipment.slice(0,24)+'…' : r.equipment;
+    ctx.fillStyle = '#94a3b8'; ctx.textAlign='left'; ctx.fillText(label, 0, y+10);
+    const x = 150, bw = (w-210)*(r.vibMax/max);
+    ctx.fillStyle = r.status === 'ALARM' ? '#ef4444' : r.status === 'WARNING' ? '#f97316' : r.status === 'PREWARNING' ? '#eab308' : '#10b981';
+    ctx.fillRect(x, y, bw, barH);
+    ctx.fillStyle = '#e2e8f0'; ctx.textAlign='right'; ctx.fillText(r.vibMax.toFixed(2), w-4, y+10);
+  });
+}
+function renderEquipment() {
+  initEquipmentDateSelector();
+  const rows = filteredEquipment();
+  document.getElementById('eqTotal').textContent = rows.length;
+  renderEquipmentCards(rows);
+  renderEquipmentTable(rows);
+  renderEquipmentPriority(rows);
+  renderEquipmentChart(rows);
+}
+
+// ==================== REFERENCE GUIDE ====================
+function buildReference() {
+  const grid = document.getElementById('refGrid');
+  if (grid.children.length > 0) return;
+
+  const refs = [
+    { title: 'Unbalance', icon: '⚖️', ref: 'Mobius D-6/D-7', symptoms: '1X radial dominant, 90±30° V/H phase, in-phase across machine', solution: 'Dynamic balancing' },
+    { title: 'Misalignment', icon: '🔧', ref: 'Mobius D-13/D-14/D-15', symptoms: '1X & 2X, 180° across coupling, elevated axial', solution: 'Laser alignment' },
+    { title: 'Looseness', icon: '🔩', ref: 'Mobius D-18/D-19/D-20', symptoms: '1X harmonics (1X-10X), possible 0.5X sub-harmonic', solution: 'Tighten bolts, check foundation' },
+    { title: 'Bearing Wear', icon: '⚙️', ref: 'Mobius D-26', symptoms: 'Non-synchronous peaks (BPFO, BPFI, FTF, BSF)', solution: 'Enveloping, schedule replacement' },
+    { title: 'Resonance', icon: '📈', ref: 'Mobius D-25', symptoms: 'Amplification hump, directional, speed-sensitive', solution: 'Modify stiffness or damping' },
+    { title: 'Cavitation', icon: '💨', ref: 'Mobius D-31', symptoms: 'Random high-frequency noise, gravel sound', solution: 'Check suction pressure, NPSH' },
+    { title: 'Electrical', icon: '⚡', ref: 'Mobius D-33/D-35/D-37', symptoms: '2×LF (100/120Hz), pole pass sidebands', solution: 'MCSA, check rotor bars' },
+    { title: 'Bent Shaft', icon: '📏', ref: 'Mobius D-16', symptoms: '1X axial dominant, 180° phase across bearings', solution: 'Check runout with dial indicator' },
+  ];
+
+  grid.innerHTML = refs.map(r => `
+    <div class="glass rounded-xl p-4 hover:border-blue-500/30 transition">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-2xl">${r.icon}</span>
+        <div>
+          <h4 class="font-bold text-sm text-white">${r.title}</h4>
+          <span class="text-[10px] text-blue-400">${r.ref}</span>
+        </div>
+      </div>
+      <div class="space-y-1.5">
+        <div>
+          <span class="text-[10px] text-gray-500 uppercase">Symptoms</span>
+          <p class="text-xs text-gray-300">${r.symptoms}</p>
+        </div>
+        <div>
+          <span class="text-[10px] text-gray-500 uppercase">Solution</span>
+          <p class="text-xs text-green-400">${r.solution}</p>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ==================== MAIN LOOP ====================
+function mainLoop() {
+  drawWaveform();
+  drawFFT();
+  drawPhase();
+  drawOrbit();
+  updateDiagnosis();
+  requestAnimationFrame(mainLoop);
+}
+
+// ==================== INIT ====================
+window.addEventListener('load', () => {
+  try { init3D(); } catch (err) {
+    console.error('Gagal memuat tampilan 3D:', err);
+    const container = document.getElementById('canvas3d');
+    if (container) container.innerHTML = '<div class="fallback-3d"><div><div class="text-4xl mb-2">⚠️</div><div class="font-bold text-white mb-1">3D gagal dimuat</div><div class="text-xs">Cek console untuk detail. Chart dan menu tetap dapat digunakan.</div></div></div>';
+  }
+  resizeCharts();
+  addPeakRow();
+  addPeakRow();
+  addPeakRow();
+  setupMultiUpload();
+  updateDiagnosis();
+  mainLoop();
+});
+
+window.addEventListener('resize', () => {
+  const container = document.getElementById('canvas3d');
+  if (container && camera && renderer) {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  }
+  resizeCharts();
+});
+</script>
+</body>
+</html>

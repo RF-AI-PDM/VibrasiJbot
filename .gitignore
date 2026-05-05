@@ -1,0 +1,8 @@
+node_modules/
+dist/
+tmp/
+chrome-profile/
+npm-cache/
+dev-server*.log
+.env
+.env.*
