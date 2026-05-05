@@ -1,156 +1,470 @@
+Berikut versi yang lebih **keren, profesional, dan bernuansa engineering** untuk README / deskripsi project kamu.
+
+````markdown
 # Mobius Vibration Simulator Pro
 
-Mobius Vibration Simulator Pro is a Vite + TypeScript web app for vibration diagnostics, spectrum analysis, and machine-condition reporting. It combines a 3D machine simulator, FFT/signal visualizations, AI-assisted image triage, an equipment dashboard, and a reference library for common fault patterns.
+**Mobius Vibration Simulator Pro** adalah aplikasi web berbasis **Vite + TypeScript** untuk simulasi, analisis, dan pelaporan kondisi mesin berbasis data vibrasi. Aplikasi ini dirancang untuk membantu engineer, technician, reliability team, dan condition monitoring analyst dalam memahami pola kerusakan mesin melalui visualisasi 3D, waveform, FFT spectrum, orbit, phase, equipment dashboard, serta report diagnostik yang terstruktur.
 
-## Features
+Project ini menggabungkan konsep **Predictive Maintenance**, **Rotating Equipment Diagnostics**, dan **Machine Condition Monitoring** dalam satu platform interaktif yang ringan, modern, dan siap dikembangkan untuk kebutuhan industri.
 
-- 3D machine simulation for motor-pump style equipment
-- Live waveform, FFT spectrum, phase, and orbit charts
-- Fault profile controls for:
-  - Normal operation
-  - Unbalance
-  - Misalignment
-  - Mechanical looseness
-  - Bearing wear
-  - Structural resonance
-  - Cavitation
-  - Electrical fault
-- Spectrum peak entry and diagnosis scoring
-- AI Upload workflow for spectrum/waveform image extraction
-- Equipment dashboard with trend and alarm summaries
-- Reference library mapped to Mobius fault guidance
-- PDF report export
-- Excel export of peak and marker data
-- Optional Supabase auth, history, and report persistence
+---
 
-## Tech Stack
+## Key Capabilities
 
-- Vite
-- TypeScript
-- Three.js
-- Supabase JS
-- jsPDF
-- jspdf-autotable
-- SheetJS (`xlsx`)
+- **3D Machine Visualization**
+  - Simulasi motor-pump train secara real-time.
+  - Animasi shaft, coupling, rotor, dan impeller berdasarkan RPM.
+  - Visual behavior berdasarkan fault profile seperti unbalance, misalignment, looseness, bearing wear, resonance, cavitation, dan electrical fault.
+
+- **Vibration Signal Analysis**
+  - Live waveform chart.
+  - FFT spectrum visualization.
+  - Orbit plot.
+  - Phase indicator.
+  - Peak marker entry.
+  - Harmonic and frequency pattern interpretation.
+
+- **Fault Diagnosis Engine**
+  - Scoring diagnosis berdasarkan spectrum peak, amplitude, harmonic pattern, RPM, dan fault profile.
+  - Probable fault ranking.
+  - Diagnostic summary.
+  - Recommended action berbasis praktik reliability engineering.
+
+- **AI-Assisted Upload Workflow**
+  - Upload image spectrum atau waveform.
+  - Ekstraksi peak dan informasi visual dari gambar.
+  - Interpretasi awal untuk membantu proses triage.
+  - Integrasi hasil extraction ke analysis workflow.
+
+- **Equipment Dashboard**
+  - Asset condition overview.
+  - Alarm summary.
+  - Trend monitoring.
+  - Critical asset priority.
+  - Equipment dataset integration.
+  - Asset detail view untuk analisis per mesin.
+
+- **Engineering Reference Library**
+  - Fault pattern reference.
+  - Mobius-style vibration guidance.
+  - Symptom, cause, frequency pattern, dan recommended solution.
+  - Cocok sebagai learning center untuk vibration analysis.
+
+- **Professional Report Export**
+  - PDF report generation.
+  - Excel export untuk peak data dan marker data.
+  - Report format untuk dokumentasi maintenance, reliability review, dan technical recommendation.
+
+- **Optional Cloud Integration**
+  - Supabase authentication.
+  - Cloud history.
+  - Report persistence.
+  - Multi-user and future enterprise-ready workflow.
+
+---
+
+## Core Fault Profiles
+
+Aplikasi mendukung beberapa fault profile utama pada rotating equipment:
+
+| Fault Profile | Typical Pattern |
+|---|---|
+| Normal Operation | Low vibration, stable waveform, clean spectrum |
+| Unbalance | Dominant 1X radial vibration |
+| Misalignment | 1X and 2X component, axial response, coupling stress |
+| Mechanical Looseness | Multiple harmonics, unstable amplitude, impact-like response |
+| Bearing Wear | High-frequency components, bearing defect indicators |
+| Structural Resonance | High response near natural frequency |
+| Cavitation | Broadband noise and unstable flow-related vibration |
+| Electrical Fault | Electrical frequency component and modulation pattern |
+
+---
+
+## Technology Stack
+
+Project ini menggunakan teknologi modern untuk menjaga performa, maintainability, dan scalability.
+
+- **Vite** — fast frontend build tool
+- **TypeScript** — type-safe application logic
+- **Three.js** — 3D machine visualization
+- **Supabase JS** — optional auth, database, and cloud persistence
+- **jsPDF** — PDF report export
+- **jspdf-autotable** — structured report tables
+- **SheetJS / xlsx** — Excel export
+- **Canvas API** — waveform, FFT, orbit, and phase chart rendering
+- **localStorage** — demo-mode persistence
+
+---
 
 ## Project Structure
 
-- `index.html` - Vite entry HTML
-- `src/main.ts` - App bootstrap
-- `src/app.ts` - Main UI, state, rendering, and event handling
-- `src/services.ts` - Analysis helpers, persistence, extraction, and Supabase integration
-- `src/visuals.ts` - Three.js scene and canvas charts
-- `src/data.ts` - Fault profiles, bearing data, reference cards, and equipment datasets
-- `src/types.ts` - Shared TypeScript types
-- `src/styles.css` - UI styling
-- `supabase/` - Backend-related assets and database helpers, if used
-- `dist/` - Production build output
+```text
+.
+├── index.html
+├── src/
+│   ├── main.ts          # Application bootstrap
+│   ├── app.ts           # Main UI, state management, rendering, and event handling
+│   ├── services.ts      # Analysis helpers, persistence, extraction, and Supabase integration
+│   ├── visuals.ts       # Three.js scene and canvas-based signal visualization
+│   ├── data.ts          # Fault profiles, bearing data, reference cards, and equipment datasets
+│   ├── types.ts         # Shared TypeScript interfaces and types
+│   └── styles.css       # Professional dashboard styling
+├── supabase/            # Optional backend/database helpers
+├── dist/                # Production build output
+└── package.json
+````
+
+---
+
+## Application Modules
+
+### 1. 3D Simulator
+
+Module ini menampilkan visualisasi mesin rotating equipment seperti motor-pump train. Motion model dapat dikembangkan agar mengikuti parameter engineering seperti:
+
+```text
+omega = RPM / 60 × 2π
+```
+
+Dengan pendekatan ini, rotasi shaft, coupling, motor rotor, dan impeller dapat dibuat lebih sinkron terhadap kecepatan aktual mesin.
+
+Fault profile juga dapat memengaruhi visual behavior seperti:
+
+* circular motion untuk unbalance
+* coupling wobble untuk misalignment
+* body/base jitter untuk looseness
+* high-frequency vibration untuk bearing wear
+* unstable flow response untuk cavitation
+
+---
+
+### 2. Spectrum Analysis
+
+Module ini digunakan untuk input dan analisis peak vibration. User dapat memasukkan frequency, amplitude, dan marker untuk membantu diagnosis.
+
+Output utama:
+
+* probable fault diagnosis
+* fault confidence score
+* spectrum interpretation
+* severity indication
+* recommended maintenance action
+* report-ready conclusion
+
+---
+
+### 3. AI Upload
+
+AI Upload workflow membantu engineer melakukan triage cepat dari gambar spectrum atau waveform.
+
+Fungsi utama:
+
+* membaca gambar spectrum/waveform
+* mengekstrak peak penting
+* mendeteksi konteks dari filename atau metadata
+* mengisi analysis form secara otomatis
+* mempercepat proses review data vibrasi
+
+---
+
+### 4. Equipment Dashboard
+
+Dashboard equipment memberikan ringkasan kondisi asset dan prioritas tindakan.
+
+Fitur yang direkomendasikan:
+
+* equipment health status
+* alarm level
+* latest vibration reading
+* trend condition
+* asset criticality
+* probable fault
+* recommended action
+* inspection priority
+
+---
+
+### 5. Reference Library
+
+Reference Library berfungsi sebagai pusat panduan analisis kerusakan mesin.
+
+Isi library dapat mencakup:
+
+* vibration symptom
+* dominant frequency pattern
+* likely root cause
+* severity indicator
+* inspection checklist
+* corrective action
+* Mobius-style diagnostic guidance
+
+---
 
 ## Requirements
 
-- Node.js 18+ recommended
-- npm
+* Node.js 18 or newer
+* npm
+
+Recommended environment:
+
+```text
+Node.js 18+
+npm 9+
+Modern browser with WebGL support
+```
+
+---
 
 ## Getting Started
+
+Clone project, install dependency, lalu jalankan development server.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the local Vite URL shown in the terminal.
+Kemudian buka local URL yang muncul di terminal.
+
+Contoh:
+
+```text
+http://localhost:5173
+```
+
+---
 
 ## Available Scripts
 
-- `npm run dev` - Start the Vite development server
-- `npm run build` - Build the production bundle
-- `npm run preview` - Preview the production build locally
+```bash
+npm run dev
+```
+
+Menjalankan aplikasi dalam development mode.
+
+```bash
+npm run build
+```
+
+Membuat production build ke folder `dist`.
+
+```bash
+npm run preview
+```
+
+Menjalankan preview production build secara lokal.
+
+---
 
 ## Supabase Configuration
 
-The app runs in demo mode if Supabase is not configured. To enable auth, cloud history, and report persistence, define:
+Aplikasi tetap dapat berjalan dalam **demo mode** tanpa Supabase.
+
+Untuk mengaktifkan authentication, cloud history, dan report persistence, tambahkan environment variable berikut:
 
 ```bash
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
 
-`VITE_SUPABASE_ANON_KEY` is also accepted as a fallback if `VITE_SUPABASE_PUBLISHABLE_KEY` is not set.
+Fallback key juga didukung:
 
-When Supabase is enabled, the app expects these tables/features to exist based on the current code:
+```bash
+VITE_SUPABASE_ANON_KEY=your_anon_key
+```
 
-- `users`
-- `analysis_results`
-- `reports`
+Saat Supabase aktif, aplikasi membutuhkan table berikut:
 
-## What the App Does
+```text
+users
+analysis_results
+reports
+```
 
-### 3D Simulation
+---
 
-The simulation tab renders a stylized motor-pump train in 3D and animates motion based on RPM, load, fault profile, and direction.
+## Operating Modes
 
-### Spectrum Analysis
+### Demo Mode
 
-The analysis tab accepts peak rows, ranks likely faults, and produces a diagnosis summary with recommended actions and report output.
+Mode ini berjalan tanpa Supabase.
 
-### AI Upload
+Fitur yang tetap aktif:
 
-The upload workflow can extract peaks from spectrum/waveform images, infer machine context from filenames and metadata, and apply the extracted results back into the analysis flow.
+* 3D simulator
+* spectrum analysis
+* local history
+* equipment dashboard
+* reference library
+* PDF export
+* Excel export
 
-### Equipment Dashboard
+Fitur yang nonaktif:
 
-This view uses embedded equipment datasets to present status, trend, and priority information.
+* authentication
+* cloud history
+* remote report persistence
 
-### Reference Library
+---
 
-This section maps fault patterns to reference guidance and Mobius-style symptoms/solutions.
+### Supabase Mode
 
-## Build Notes
+Mode ini digunakan untuk deployment yang membutuhkan backend.
 
-The app uses lazy loading for heavier export and visualization libraries so the initial bundle stays smaller. Export/report features load their dependencies only when needed.
+Fitur tambahan:
 
-## Development Notes
+* user authentication
+* saved analysis history
+* cloud report storage
+* multi-session access
+* future multi-user workflow
 
-- The app persists UI state and history in `localStorage`.
-- If WebGL is unavailable, the 3D panel falls back to a simple message.
-- If Supabase is not configured, the app stays functional in demo mode.
+---
 
 ## Production Build
 
+Untuk membuat build production:
+
 ```bash
 npm run build
 ```
 
-The output will be written to `dist/`.
+Output akan dibuat di:
+
+```text
+dist/
+```
+
+---
 
 ## Deployment
 
-The app can be deployed in two modes:
+Aplikasi dapat dideploy ke hosting frontend modern seperti Vercel, Netlify, Cloudflare Pages, atau static hosting lain.
 
-- Demo mode: deploy without Supabase environment variables. Auth, cloud history, and remote report persistence stay disabled, while local analysis and exports remain available.
-- Supabase mode: set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the hosting provider environment. `VITE_SUPABASE_ANON_KEY` is supported as a fallback.
-
-Build command:
+### Build Command
 
 ```bash
 npm run build
 ```
 
-Publish directory:
+### Publish Directory
 
-```bash
+```text
 dist
 ```
 
+### Environment Variables
+
+Untuk deployment dengan Supabase:
+
+```bash
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+```
+
+Untuk deployment demo mode, environment variable Supabase dapat dikosongkan.
+
+---
+
 ## Smoke QA Checklist
 
-- 3D Simulation: open the app, confirm the machine scene renders, and switch fault profiles.
-- Spectrum Analysis: enter at least one valid peak and confirm diagnosis results update.
-- AI Upload: upload a spectrum or waveform image and confirm extraction/result states are understandable.
-- Equipment Dashboard: open the dashboard and confirm equipment rows, filters, and priority cards render.
-- Exports: generate a PDF report and Excel export from a fresh browser session.
-- Supabase fallback: run without env variables and confirm the app stays usable in demo mode.
+Gunakan checklist berikut sebelum release atau deployment.
+
+### 3D Simulator
+
+* Buka tab 3D Simulator.
+* Pastikan scene motor-pump muncul.
+* Ubah RPM dan pastikan rotasi berubah.
+* Ganti fault profile dan pastikan visual response berubah.
+* Pastikan WebGL fallback tampil jika browser tidak mendukung 3D.
+
+### Spectrum Analysis
+
+* Masukkan minimal satu peak valid.
+* Pastikan diagnosis result muncul.
+* Cek fault ranking dan confidence score.
+* Pastikan recommended action tampil jelas.
+
+### AI Upload
+
+* Upload gambar spectrum atau waveform.
+* Pastikan extraction status mudah dipahami.
+* Pastikan hasil extraction dapat digunakan ke analysis flow.
+* Pastikan error state tampil jika gambar tidak terbaca.
+
+### Equipment Dashboard
+
+* Buka dashboard equipment.
+* Pastikan equipment rows tampil.
+* Cek filter, priority card, alarm summary, dan trend indicator.
+* Pastikan asset detail page dapat dibuka.
+
+### Export
+
+* Generate PDF report.
+* Export Excel peak/marker data.
+* Pastikan export tetap berjalan dari fresh browser session.
+
+### Supabase Fallback
+
+* Jalankan aplikasi tanpa Supabase environment variable.
+* Pastikan aplikasi tetap usable dalam demo mode.
+* Pastikan tidak ada crash saat auth atau cloud persistence nonaktif.
+
+---
+
+## Recommended Future Enhancements
+
+Beberapa pengembangan lanjutan yang direkomendasikan:
+
+* Automatic probable fault diagnosis berbasis rule engine yang lebih detail.
+* Asset criticality scoring berdasarkan safety, production impact, downtime, dan repair cost.
+* Historical vibration trend untuk tiap equipment.
+* Bearing defect frequency calculator: BPFO, BPFI, BSF, dan FTF.
+* Alarm threshold berbasis ISO 20816.
+* Multi-spectrum upload untuk DE/NDE, horizontal/vertical/axial, dan bearing 1/2/3/4.
+* Report template dengan logo perusahaan dan signature field.
+* Maintenance recommendation workflow.
+* Database schema untuk equipment, inspection route, analysis history, dan report archive.
+* Role-based access untuk engineer, supervisor, dan admin.
+
+---
+
+## Engineering Objective
+
+Tujuan utama project ini adalah menyediakan platform analisis vibrasi yang:
+
+* mudah digunakan oleh technician,
+* cukup detail untuk engineer,
+* visual untuk training dan presentasi,
+* ringan untuk browser,
+* fleksibel untuk demo maupun deployment produksi,
+* dan dapat dikembangkan menjadi sistem Predictive Maintenance yang lebih lengkap.
+
+---
 
 ## License
 
 No license file is currently included in this project.
+
+Sebelum digunakan secara komersial atau dibagikan ke publik, disarankan menambahkan file license seperti:
+
+```text
+MIT License
+Apache License 2.0
+Proprietary / Internal Use Only
+```
+
+````
+
+Kalau mau dibuat lebih **premium**, kamu bisa pakai tagline ini di bagian atas README:
+
+```markdown
+> Professional vibration diagnostics platform for rotating equipment analysis, 3D simulation, AI-assisted spectrum triage, and predictive maintenance reporting.
+````
+
+Atau versi Indonesia:
+
+```markdown
+> Platform engineering untuk analisis vibrasi rotating equipment, simulasi 3D, AI-assisted spectrum triage, dan laporan predictive maintenance profesional.
+```
