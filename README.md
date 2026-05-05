@@ -1,6 +1,3 @@
-Berikut versi yang lebih **keren, profesional, dan bernuansa engineering** untuk README / deskripsi project kamu.
-
-````markdown
 # Mobius Vibration Simulator Pro
 
 **Mobius Vibration Simulator Pro** adalah aplikasi web berbasis **Vite + TypeScript** untuk simulasi, analisis, dan pelaporan kondisi mesin berbasis data vibrasi. Aplikasi ini dirancang untuk membantu engineer, technician, reliability team, dan condition monitoring analyst dalam memahami pola kerusakan mesin melalui visualisasi 3D, waveform, FFT spectrum, orbit, phase, equipment dashboard, serta report diagnostik yang terstruktur.
