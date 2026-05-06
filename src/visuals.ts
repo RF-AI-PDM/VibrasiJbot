@@ -21,6 +21,10 @@ interface SimulationSignals {
 interface MachineSceneParts {
   machineGroup: THREE.Group;
   motorGroup: THREE.Group;
+  motorHousing: THREE.Mesh;
+  motorRotor: THREE.Mesh;
+  motorRotorBand: THREE.Mesh;
+  motorCoolingFan: THREE.Group;
   pumpGroup: THREE.Group;
   coupling: THREE.Mesh;
   couplingRings: THREE.Mesh[];
@@ -35,7 +39,12 @@ interface MachineSceneParts {
   boltMarkers: THREE.Mesh[];
   orbitTrail: THREE.Line;
   forceVectors: THREE.Group[];
+  machineLabels: {
+    motor: THREE.Sprite;
+    coupling: THREE.Sprite;
+  };
   drivenLabels: Record<string, THREE.Sprite>;
+  motorLabels: Record<string, THREE.Sprite>;
   wireframeObjects: THREE.Mesh[];
 }
 
@@ -134,6 +143,9 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
 
   const baseMaterial = createMaterial(0x15243a, 0x030b13);
   const motorMaterial = createMaterial(0x5aa7d8, 0x071b2b);
+  const motorFinMaterial = createMaterial(0x6aaedd, 0x0c2234);
+  const motorDetailMaterial = createMaterial(0x3f5f7d, 0x07131d);
+  const motorAccentMaterial = createMaterial(0x91aabc, 0x102131);
   const pumpMaterial = createMaterial(0x58c6ad, 0x08251f);
   const shaftMaterial = createMaterial(0xd4e4ec, 0x151e25);
   const couplingMaterial = createMaterial(0xe8bc72, 0x241a0a);
@@ -162,34 +174,202 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
   machineGroup.add(plinth);
 
   const motorGroup = new THREE.Group();
-  motorGroup.position.set(-2.0, 1.05, 0);
+  motorGroup.position.set(-1.96, 1.05, 0);
   machineGroup.add(motorGroup);
 
-  const motorBody = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.22, 1.22), motorMaterial);
-  motorBody.castShadow = true;
-  motorGroup.add(motorBody);
-  wireframeObjects.push(motorBody);
+  const motorHousing = new THREE.Mesh(new THREE.CylinderGeometry(0.76, 0.76, 2.68, 28), motorMaterial);
+  motorHousing.rotation.z = Math.PI / 2;
+  motorHousing.castShadow = true;
+  motorGroup.add(motorHousing);
+  wireframeObjects.push(motorHousing);
 
-  const fanCover = new THREE.Mesh(new THREE.CylinderGeometry(0.54, 0.54, 0.35, 24), motorMaterial);
+  const motorFins = new THREE.Group();
+  for (let index = 0; index < 15; index += 1) {
+    const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.84, 0.84, 0.032, 28), motorFinMaterial.clone());
+    fin.rotation.z = Math.PI / 2;
+    fin.position.x = -1.18 + index * 0.17;
+    motorFins.add(fin);
+    wireframeObjects.push(fin);
+  }
+  [-0.58, 0.58].forEach((zOffset) => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(2.42, 0.08, 0.06), motorFinMaterial.clone());
+    rail.position.set(0, 0.74, zOffset);
+    motorFins.add(rail);
+    wireframeObjects.push(rail);
+  });
+  [-0.42, 0, 0.42].forEach((zOffset) => {
+    const lowerRail = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.055, 0.045), motorDetailMaterial.clone());
+    lowerRail.position.set(0, -0.72, zOffset);
+    motorFins.add(lowerRail);
+    wireframeObjects.push(lowerRail);
+  });
+  motorGroup.add(motorFins);
+
+  const motorRearBell = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.58, 0.34, 28), motorDetailMaterial);
+  motorRearBell.rotation.z = Math.PI / 2;
+  motorRearBell.position.set(-1.48, 0, 0);
+  motorGroup.add(motorRearBell);
+  wireframeObjects.push(motorRearBell);
+
+  const motorFrontBell = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.72, 0.36, 28), motorDetailMaterial);
+  motorFrontBell.rotation.z = Math.PI / 2;
+  motorFrontBell.position.set(1.48, 0, 0);
+  motorGroup.add(motorFrontBell);
+  wireframeObjects.push(motorFrontBell);
+
+  const frontCap = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.32, 0.16, 24), bearingMaterial.clone());
+  frontCap.rotation.z = Math.PI / 2;
+  frontCap.position.set(1.76, 0, 0);
+  motorGroup.add(frontCap);
+  wireframeObjects.push(frontCap);
+
+  const rearCap = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.14, 24), bearingMaterial.clone());
+  rearCap.rotation.z = Math.PI / 2;
+  rearCap.position.set(-1.72, 0, 0);
+  motorGroup.add(rearCap);
+  wireframeObjects.push(rearCap);
+
+  const motorFrontBearing = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.3, 18), bearingMaterial);
+  motorFrontBearing.rotation.z = Math.PI / 2;
+  motorFrontBearing.position.set(1.9, 0, 0);
+  motorGroup.add(motorFrontBearing);
+  wireframeObjects.push(motorFrontBearing);
+
+  const motorRearBearing = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.24, 18), bearingMaterial);
+  motorRearBearing.rotation.z = Math.PI / 2;
+  motorRearBearing.position.set(-1.88, 0, 0);
+  motorGroup.add(motorRearBearing);
+  wireframeObjects.push(motorRearBearing);
+
+  const motorRotor = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 2.12, 20), motorAccentMaterial);
+  motorRotor.rotation.z = Math.PI / 2;
+  motorRotor.position.set(0, 0, 0);
+  motorGroup.add(motorRotor);
+  wireframeObjects.push(motorRotor);
+
+  const motorRotorBand = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 12, 24), motorAccentMaterial.clone());
+  motorRotorBand.rotation.y = Math.PI / 2;
+  motorRotorBand.position.set(0.18, 0, 0);
+  motorGroup.add(motorRotorBand);
+  wireframeObjects.push(motorRotorBand);
+
+  const terminalBox = new THREE.Group();
+  terminalBox.position.set(0.12, 1.02, 0.82);
+  motorGroup.add(terminalBox);
+
+  const terminalBody = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.42, 0.56), motorDetailMaterial);
+  terminalBody.castShadow = true;
+  terminalBox.add(terminalBody);
+  wireframeObjects.push(terminalBody);
+
+  const terminalLid = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.12, 0.62), motorMaterial.clone());
+  terminalLid.position.y = 0.26;
+  terminalBox.add(terminalLid);
+  wireframeObjects.push(terminalLid);
+
+  [
+    [-0.32, 0.34, -0.23],
+    [-0.32, 0.34, 0.23],
+    [0.32, 0.34, -0.23],
+    [0.32, 0.34, 0.23],
+  ].forEach(([x, y, z]) => {
+    const lidBolt = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.035, 8), bearingMaterial.clone());
+    lidBolt.position.set(x, y, z);
+    terminalBox.add(lidBolt);
+    wireframeObjects.push(lidBolt);
+  });
+
+  const cableGland = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.2, 12), motorAccentMaterial.clone());
+  cableGland.rotation.z = Math.PI / 2;
+  cableGland.position.set(0.44, 0.02, -0.2);
+  terminalBox.add(cableGland);
+  wireframeObjects.push(cableGland);
+
+  const nameplate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.04, 0.34),
+    new THREE.MeshStandardMaterial({ color: 0xc5d7df, emissive: 0x151f26, metalness: 0.65, roughness: 0.28 }),
+  );
+  nameplate.position.set(0.24, 0.25, 0.78);
+  motorGroup.add(nameplate);
+  wireframeObjects.push(nameplate);
+
+  const nameplateLineMaterial = new THREE.MeshStandardMaterial({ color: 0x22313b, emissive: 0x03080c, metalness: 0.2, roughness: 0.5 });
+  [-0.09, 0.03, 0.15].forEach((xOffset) => {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.012, 0.012), nameplateLineMaterial.clone());
+    line.position.set(0.25 + xOffset, 0.278, 0.955);
+    motorGroup.add(line);
+    wireframeObjects.push(line);
+  });
+
+  const motorFeet = new THREE.Group();
+  [
+    [-0.72, -0.86, -0.48],
+    [-0.72, -0.86, 0.48],
+    [0.72, -0.86, -0.48],
+    [0.72, -0.86, 0.48],
+  ].forEach(([x, y, z]) => {
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 0.58), motorDetailMaterial.clone());
+    foot.position.set(x, y, z);
+    motorFeet.add(foot);
+    wireframeObjects.push(foot);
+
+    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 10), bearingMaterial.clone());
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.set(x, y - 0.08, z);
+    motorFeet.add(bolt);
+    wireframeObjects.push(bolt);
+  });
+  motorGroup.add(motorFeet);
+
+  const motorRearFan = new THREE.Group();
+  motorRearFan.position.set(-1.92, 0, 0);
+  motorGroup.add(motorRearFan);
+
+  const fanCover = new THREE.Mesh(new THREE.CylinderGeometry(0.96, 0.9, 0.24, 32, 1, true), motorDetailMaterial);
   fanCover.rotation.z = Math.PI / 2;
-  fanCover.position.set(-1.15, 0, 0);
-  motorGroup.add(fanCover);
+  motorRearFan.add(fanCover);
   wireframeObjects.push(fanCover);
 
-  const motorEnd = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.39, 0.9, 24), baseMaterial);
-  motorEnd.rotation.z = Math.PI / 2;
-  motorEnd.position.set(1.1, 0, 0);
-  motorGroup.add(motorEnd);
-  wireframeObjects.push(motorEnd);
+  const fanGuardOuter = new THREE.Mesh(new THREE.TorusGeometry(0.93, 0.035, 10, 32), motorDetailMaterial.clone());
+  fanGuardOuter.rotation.y = Math.PI / 2;
+  fanGuardOuter.position.x = -0.13;
+  motorRearFan.add(fanGuardOuter);
+  wireframeObjects.push(fanGuardOuter);
 
-  const motorBearing = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.28, 16), bearingMaterial);
-  motorBearing.rotation.z = Math.PI / 2;
-  motorBearing.position.set(1.4, 0, 0);
-  motorGroup.add(motorBearing);
-  wireframeObjects.push(motorBearing);
+  const fanGuardInner = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.022, 8, 24), bearingMaterial.clone());
+  fanGuardInner.rotation.y = Math.PI / 2;
+  fanGuardInner.position.x = -0.14;
+  motorRearFan.add(fanGuardInner);
+  wireframeObjects.push(fanGuardInner);
+
+  const fanHub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.14, 18), bearingMaterial.clone());
+  fanHub.rotation.z = Math.PI / 2;
+  fanHub.position.x = -0.16;
+  motorRearFan.add(fanHub);
+  wireframeObjects.push(fanHub);
+
+  const fanSpokes = new THREE.Group();
+  for (let index = 0; index < 12; index += 1) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.026, 0.026), bearingMaterial.clone());
+    const angle = (index / 12) * Math.PI * 2;
+    spoke.rotation.y = angle;
+    spoke.position.set(-0.15, Math.sin(angle) * 0.28, Math.cos(angle) * 0.28);
+    fanSpokes.add(spoke);
+    wireframeObjects.push(spoke);
+  }
+  for (let index = 0; index < 6; index += 1) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.34, 0.12), motorFinMaterial.clone());
+    const angle = (index / 6) * Math.PI * 2;
+    blade.rotation.x = angle;
+    blade.rotation.z = angle * 0.5;
+    blade.position.set(0.02, Math.sin(angle) * 0.24, Math.cos(angle) * 0.24);
+    fanSpokes.add(blade);
+    wireframeObjects.push(blade);
+  }
+  motorRearFan.add(fanSpokes);
 
   const pumpGroup = new THREE.Group();
-  pumpGroup.position.set(2.1, 0.98, 0);
+  pumpGroup.position.set(1.92, 0.98, 0);
   machineGroup.add(pumpGroup);
 
   const pumpBody = new THREE.Mesh(new THREE.BoxGeometry(1.65, 1.45, 1.45), pumpMaterial);
@@ -215,9 +395,9 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
   pumpGroup.add(pumpBearing);
   wireframeObjects.push(pumpBearing);
 
-  const shaftMotor = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.8, 16), shaftMaterial);
+  const shaftMotor = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 2.18, 18), shaftMaterial);
   shaftMotor.rotation.z = Math.PI / 2;
-  shaftMotor.position.set(-0.05, 1.05, 0);
+  shaftMotor.position.set(0.24, 1.05, 0);
   machineGroup.add(shaftMotor);
   wireframeObjects.push(shaftMotor);
 
@@ -247,7 +427,7 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
     new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.22, 0.035), stripeMaterial),
     new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.22, 0.035), stripeMaterial.clone()),
   ];
-  shaftStripes[0].position.set(-0.05, 1.05, 0.08);
+  shaftStripes[0].position.set(0.24, 1.05, 0.08);
   shaftStripes[1].position.set(1.85, 1.0, 0.08);
   machineGroup.add(...shaftStripes);
 
@@ -287,28 +467,49 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
   arrowRadial.position.set(-3.0, 1.65, 0);
   machineGroup.add(arrowRadial);
 
-  const labelMotor = createCanvasLabel('MOTOR', '#60a5fa');
-  labelMotor.position.set(-2.0, 2.72, 0);
+  const labelMotor = createCanvasLabel('MOTOR', '#7fd0b2');
+  labelMotor.position.set(-1.9, 2.78, 0);
   machineGroup.add(labelMotor);
 
-  const labelCoupling = createCanvasLabel('COUPLING', '#f59e0b');
+  const labelCoupling = createCanvasLabel('COUPLING', '#ddb15c');
   labelCoupling.position.set(0.7, 2.74, 0);
   machineGroup.add(labelCoupling);
 
   const drivenLabels: Record<string, THREE.Sprite> = {};
   [
-    ['pump', 'PUMP', '#34d399'],
-    ['fan', 'FAN', '#22d3ee'],
-    ['gearbox', 'GEARBOX', '#f97316'],
-    ['compressor', 'COMPRESSOR', '#a7f3d0'],
-    ['turbine', 'TURBINE', '#fde68a'],
-    ['motor', 'MOTOR ONLY', '#93c5fd'],
+    ['pump', 'PUMP', '#7fd0b2'],
+    ['fan', 'FAN', '#8ae1da'],
+    ['gearbox', 'GEARBOX', '#ddb15c'],
+    ['compressor', 'COMPRESSOR', '#b9f0e6'],
+    ['turbine', 'TURBINE', '#e7c97a'],
+    ['motor', 'MOTOR ONLY', '#9fb9d5'],
   ].forEach(([key, text, color]) => {
     const label = createCanvasLabel(text, color);
-    label.position.set(2.55, 2.72, 0);
+    label.position.set(2.12, 2.66, 0);
     label.visible = key === 'pump';
     drivenLabels[key] = label;
     machineGroup.add(label);
+  });
+
+  const motorLabels: Record<string, THREE.Sprite> = {};
+  const motorLabelConfigs: Array<{
+    key: string;
+    text: string;
+    color: string;
+    position: readonly [number, number, number];
+  }> = [
+    { key: 'motor', text: 'MOTOR', color: '#8ae1da', position: [-0.18, 3.0, 0] },
+    { key: 'rotor', text: 'ROTOR', color: '#9fb9d5', position: [0.18, 1.78, 0.96] },
+    { key: 'stator', text: 'STATOR', color: '#b9f0e6', position: [-0.92, 1.78, -0.94] },
+    { key: 'shaft', text: 'SHAFT', color: '#e7fbf8', position: [2.08, 1.32, 0.72] },
+    { key: 'terminal', text: 'TERMINAL BOX', color: '#ddb15c', position: [0.1, 2.28, 1.12] },
+  ];
+  motorLabelConfigs.forEach(({ key, text, color, position }) => {
+    const label = createCanvasLabel(text, color);
+    label.position.set(position[0], position[1], position[2]);
+    label.visible = false;
+    motorLabels[key] = label;
+    motorGroup.add(label);
   });
 
   const sensorMaterial = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x083344, metalness: 0.2, roughness: 0.35 });
@@ -376,6 +577,10 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
   return {
     machineGroup,
     motorGroup,
+    motorHousing,
+    motorRotor,
+    motorRotorBand,
+    motorCoolingFan: motorRearFan,
     pumpGroup,
     coupling,
     couplingRings,
@@ -390,7 +595,12 @@ function buildMachineScene(scene: THREE.Scene): MachineSceneParts {
     boltMarkers,
     orbitTrail,
     forceVectors,
+    machineLabels: {
+      motor: labelMotor,
+      coupling: labelCoupling,
+    },
     drivenLabels,
+    motorLabels,
     wireframeObjects,
   };
 }
@@ -450,6 +660,9 @@ function applyRotatingMachineMotion(parts: MachineSceneParts, state: AppState, s
   const rotation = signals.simTime * signals.omega;
   const vaneMultiplier = Math.max(1.2, state.machineContext.vaneCount / 3);
 
+  parts.motorRotor.rotation.x = rotation;
+  parts.motorRotorBand.rotation.x = rotation * 1.1;
+  parts.motorCoolingFan.rotation.x = rotation * 1.2;
   parts.coupling.rotation.y = rotation;
   parts.couplingRings.forEach((ring, index) => {
     ring.rotation.x = rotation * (index ? -1 : 1);
@@ -461,6 +674,7 @@ function applyRotatingMachineMotion(parts: MachineSceneParts, state: AppState, s
   parts.shaftStripes.forEach((stripe, index) => {
     const radius = 0.095;
     const angle = rotation + index * Math.PI;
+    stripe.position.x = index === 0 ? 0.24 : 1.85;
     stripe.position.y = (index === 0 ? 1.05 : 1.0) + Math.sin(angle) * radius;
     stripe.position.z = Math.cos(angle) * radius;
   });
@@ -469,8 +683,9 @@ function applyRotatingMachineMotion(parts: MachineSceneParts, state: AppState, s
 function applyFaultVibration(parts: MachineSceneParts, state: AppState, signals: SimulationSignals): void {
   const profile = faultProfiles[state.faultKey];
   const direction = state.direction;
+  const motorMode = state.machineContext.machineType === 'motor';
   const motorBase = { x: -2.0, y: 1.05, z: 0 };
-  const pumpBase = { x: 2.1, y: 0.98, z: 0 };
+  const pumpBase = { x: 1.92, y: 0.98, z: 0 };
   let motorX = motorBase.x;
   let motorY = motorBase.y;
   let motorZ = motorBase.z;
@@ -495,10 +710,14 @@ function applyFaultVibration(parts: MachineSceneParts, state: AppState, signals:
   parts.pumpGroup.rotation.x = 0;
   parts.pumpGroup.rotation.z = 0;
   parts.machineGroup.rotation.z = 0;
-  parts.machineGroup.position.y = 0.03;
+  parts.machineGroup.position.y = 0.03 + (motorMode ? Math.sin(signals.simTime * signals.omega * 0.33) * signals.amp1x * 0.28 : 0);
   parts.coupling.rotation.z = 0;
   parts.shaftPump.position.y = 1.0;
   parts.shaftMotor.position.y = 1.05;
+  parts.motorCoolingFan.position.y = 0;
+  parts.motorCoolingFan.position.x = -1.92;
+  parts.motorCoolingFan.position.z = 0;
+  parts.motorHousing.position.y = 0;
 
   if (state.faultKey === 'unbalance') {
     motorX += Math.sin(signals.simTime * signals.omega) * signals.amp1x * 1.7;
@@ -582,7 +801,7 @@ export function mountThreeScene(container: HTMLElement, getState: () => AppState
   scene.fog = new THREE.Fog(0x081521, 10, 24);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  camera.position.set(5.6, 4.2, 5.8);
+  camera.position.set(5.8, 4.2, 6.15);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -593,26 +812,26 @@ export function mountThreeScene(container: HTMLElement, getState: () => AppState
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.target.set(0.25, 1.15, 0);
+  controls.target.set(0.05, 1.15, 0);
   controls.update();
 
-  const ambient = new THREE.AmbientLight(0xe8fbff, 0.78);
+  const ambient = new THREE.AmbientLight(0xe8fbff, 0.68);
   scene.add(ambient);
 
-  const keyLight = new THREE.DirectionalLight(0xf3ffff, 1.08);
+  const keyLight = new THREE.DirectionalLight(0xf3ffff, 0.98);
   keyLight.position.set(5, 10, 5);
   keyLight.castShadow = true;
   scene.add(keyLight);
 
-  const rim = new THREE.PointLight(0x7dd3fc, 1.05, 20);
+  const rim = new THREE.PointLight(0x8ae1da, 0.9, 20);
   rim.position.set(-4, 4, -2.5);
   scene.add(rim);
 
-  const glow = new THREE.PointLight(0x6ee7b7, 0.72, 18);
+  const glow = new THREE.PointLight(0x9fb9d5, 0.58, 18);
   glow.position.set(4.5, 3, 3.5);
   scene.add(glow);
 
-  const fill = new THREE.PointLight(0xbae6fd, 0.45, 12);
+  const fill = new THREE.PointLight(0xb9f0e6, 0.36, 12);
   fill.position.set(0, 3.4, -4);
   scene.add(fill);
 
@@ -629,7 +848,7 @@ export function mountThreeScene(container: HTMLElement, getState: () => AppState
   scene.add(floor);
 
   const parts = buildMachineScene(scene);
-  parts.machineGroup.scale.setScalar(1.18);
+  parts.machineGroup.scale.setScalar(1.08);
   parts.machineGroup.position.y = 0.03;
 
   let wireframe = false;
@@ -652,8 +871,9 @@ export function mountThreeScene(container: HTMLElement, getState: () => AppState
   }
 
   function resetCamera(): void {
-    camera.position.set(5.6, 4.2, 5.8);
-    controls.target.set(0.25, 1.15, 0);
+    const motorMode = getState().machineContext.machineType === 'motor';
+    camera.position.set(5.8, 4.2, 6.15);
+    controls.target.set(motorMode ? -0.18 : 0.05, 1.15, 0);
     controls.update();
   }
 
@@ -669,6 +889,7 @@ export function mountThreeScene(container: HTMLElement, getState: () => AppState
   function applyMotion(state: AppState, elapsed: number): void {
     const signals = getSimulationSignals(state, elapsed);
     const context = state.machineContext;
+    const motorMode = context.machineType === 'motor';
     const syncWave = Math.sin(signals.simTime * signals.omega);
     const drivenVisible = context.machineType !== 'motor' || context.drivenComponent !== 'motor';
 
@@ -681,9 +902,16 @@ export function mountThreeScene(container: HTMLElement, getState: () => AppState
     });
     parts.shaftPump.visible = drivenVisible;
     parts.shaftStripes[1].visible = drivenVisible;
+    parts.machineLabels.motor.visible = !motorMode;
+    parts.machineLabels.coupling.visible = !motorMode && parts.coupling.visible;
     Object.entries(parts.drivenLabels).forEach(([key, label]) => {
-      label.visible = drivenVisible ? key === context.drivenComponent : key === 'motor';
+      label.visible = !motorMode && (drivenVisible ? key === context.drivenComponent : key === 'motor');
     });
+    Object.entries(parts.motorLabels).forEach(([key, label]) => {
+      label.visible = motorMode && (key === 'motor' || state.wireframe);
+    });
+
+    controls.target.lerp(new THREE.Vector3(motorMode ? -0.2 : 0.05, 1.15, 0), 0.08);
 
     if (context.drivenComponent === 'fan') {
       parts.pumpGroup.scale.set(1.22, 0.82, 1.22);

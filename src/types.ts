@@ -26,6 +26,7 @@ export type SimulationSpeed = 'freeze' | '0.25' | '0.5' | '1' | '2';
 export type VibrationGain = 'low' | 'normal' | 'high';
 export type ExtractionStatus = 'pending' | 'needs-calibration' | 'extracted' | 'failed';
 export type ExtractionConfidence = 'low' | 'medium' | 'high';
+export type ExtractionSource = 'local' | 'ai-assisted' | 'manual-corrected';
 
 export interface SpectrumPeak {
   o: number;
@@ -156,6 +157,49 @@ export interface ExtractedPeak {
   confidence: number;
 }
 
+export interface AiProviderSettings {
+  enabled: boolean;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  status: 'idle' | 'ready' | 'running' | 'error';
+  message: string;
+}
+
+export interface AiExtractionEvidence {
+  source: string;
+  description: string;
+  confidence: number;
+}
+
+export interface AiVisionRequest {
+  model: string;
+  context: MachineContext;
+  uploads: Array<{
+    id: UploadedAsset['id'];
+    name: UploadedAsset['name'];
+    type: UploadedAsset['type'];
+    bearing: UploadedAsset['bearing'];
+    direction: UploadedAsset['direction'];
+    calibration?: PlotCalibration;
+    localPeaks: ExtractedPeak[];
+    imageDataUrl?: string;
+  }>;
+}
+
+export interface AiVisionResult {
+  provider: string;
+  model: string;
+  confidence: number;
+  machineContext?: Partial<MachineContext>;
+  assets: Array<{
+    uploadId: UploadedAsset['id'];
+    peaks: Array<Omit<ExtractedPeak, 'id'> & { id?: string }>;
+    evidence: string[];
+  }>;
+  evidence: string[];
+}
+
 export interface ImageExtractionConfig {
   calibration: PlotCalibration;
   smoothing: number;
@@ -204,6 +248,8 @@ export interface UploadedAsset {
   extractionConfidenceLabel?: ExtractionConfidence;
   parseError?: string;
   tracePoints?: Array<{ x: number; y: number }>;
+  extractionSource?: ExtractionSource;
+  aiEvidence?: AiExtractionEvidence[];
 }
 
 export interface MachineContext {
@@ -289,6 +335,9 @@ export interface AppState {
   equipmentUnitFilter: string;
   equipmentStatusFilter: EquipmentStatus | 'ALL';
   equipmentSearch: string;
+  uiDensity: 'compact' | 'normal' | 'large';
+  uiTextCollapsed: boolean;
   history: HistoryEntry[];
   connection: AppConnectionState;
+  aiProviderSettings: AiProviderSettings;
 }

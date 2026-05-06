@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { faultOrder, faultProfiles, bearingDatabase, measurementLabels } from './data';
 import type {
+  AiProviderSettings,
+  AiVisionRequest,
+  AiVisionResult,
   AppConnectionState,
   AppState,
   AnalysisResultItem,
@@ -26,6 +29,11 @@ import type {
 
 const STATE_KEY = 'mobius-vibration-state-v1';
 const HISTORY_KEY = 'mobius-vibration-history-v1';
+const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_TEXT_UPLOAD_BYTES = 2 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+const ALLOWED_TEXT_FILE_PATTERN = /\.(csv|txt)$/i;
+const AI_TIMEOUT_MS = 25_000;
 
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim() ?? '';
 export const SUPABASE_KEY = (
@@ -58,6 +66,95 @@ export function getSupabaseClient(): SupabaseClient | null {
   return supabaseClient;
 }
 
+export async function getSignedInUserId(client: SupabaseClient | null = getSupabaseClient()): Promise<string | null> {
+  if (!client) {
+    return null;
+  }
+
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    return null;
+  }
+
+  return data.session?.user.id ?? null;
+}
+
+export async function fetchAuthConnectionState(): Promise<AppConnectionState> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      ready: true,
+      configured: false,
+      mode: 'demo',
+      email: null,
+      role: 'guest',
+      message: 'Demo mode. Tambahkan Supabase env untuk aktifkan auth, storage, dan histori cloud.',
+    };
+  }
+
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    return {
+      ready: true,
+      configured: true,
+      mode: 'error',
+      email: null,
+      role: 'guest',
+      message: error.message,
+    };
+  }
+
+  const session = data.session;
+  if (!session?.user) {
+    return {
+      ready: true,
+      configured: true,
+      mode: 'signed-out',
+      email: null,
+      role: 'guest',
+      message: 'Belum login. Gunakan form auth untuk sinkronisasi cloud.',
+    };
+  }
+
+  const profile = await client
+    .from('users')
+    .select('display_name, role_name')
+    .eq('id', session.user.id)
+    .maybeSingle();
+
+  const role = (profile.data?.role_name ?? 'technician') as AppConnectionState['role'];
+  return {
+    ready: true,
+    configured: true,
+    mode: 'signed-in',
+    email: session.user.email ?? null,
+    role,
+    message: profile.data?.display_name
+      ? `Signed in as ${profile.data.display_name}`
+      : `Signed in as ${session.user.email ?? 'unknown user'}`,
+  };
+}
+
+export async function signInWithPassword(email: string, password: string): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: 'Supabase belum dikonfigurasi.' };
+  }
+
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  return { error: error?.message ?? null };
+}
+
+export async function signOutSession(): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: null };
+  }
+
+  const { error } = await client.auth.signOut();
+  return { error: error?.message ?? null };
+}
+
 export function defaultConnectionState(): AppConnectionState {
   return {
     mode: isSupabaseConfigured() ? 'connected' : 'demo',
@@ -67,6 +164,21 @@ export function defaultConnectionState(): AppConnectionState {
     role: 'guest',
     message: isSupabaseConfigured() ? 'Supabase siap. Login untuk sync data dan histori.' : 'Demo mode. Tambahkan VITE_SUPABASE_URL dan key untuk aktifkan backend.',
   };
+}
+
+export function defaultAiProviderSettings(): AiProviderSettings {
+  return {
+    enabled: false,
+    endpoint: '',
+    apiKey: '',
+    model: 'vision-default',
+    status: 'idle',
+    message: 'AI assist disabled. Local extraction is active.',
+  };
+}
+
+export function isAiProviderReady(settings: AiProviderSettings): boolean {
+  return Boolean(settings.enabled && settings.endpoint.trim() && settings.apiKey.trim());
 }
 
 export function defaultPeakRows(): PeakInputRow[] {
@@ -134,8 +246,11 @@ export function defaultAppState(): AppState {
     equipmentUnitFilter: 'ALL',
     equipmentStatusFilter: 'ALL',
     equipmentSearch: '',
+    uiDensity: 'normal',
+    uiTextCollapsed: false,
     history: loadHistory(),
     connection: defaultConnectionState(),
+    aiProviderSettings: defaultAiProviderSettings(),
   };
 }
 
@@ -154,6 +269,7 @@ export function loadPersistedAppState(base: AppState): AppState {
       history: base.history,
       peakRows: Array.isArray(parsed.peakRows) && parsed.peakRows.length ? parsed.peakRows : base.peakRows,
       machineContext: normalizeMachineContext(parsed.machineContext, base.machineContext),
+      aiProviderSettings: normalizeAiProviderSettings(parsed.aiProviderSettings, base.aiProviderSettings),
       uploadedAssets: [],
       uploadResult: null,
       analysisResults: [],
@@ -185,10 +301,27 @@ export function persistAppState(state: AppState): void {
     equipmentUnitFilter: state.equipmentUnitFilter,
     equipmentStatusFilter: state.equipmentStatusFilter,
     equipmentSearch: state.equipmentSearch,
+    uiDensity: state.uiDensity,
+    uiTextCollapsed: state.uiTextCollapsed,
     machineContext: state.machineContext,
+    aiProviderSettings: state.aiProviderSettings,
   };
 
   writeStorage(STATE_KEY, JSON.stringify(snapshot));
+}
+
+export function normalizeAiProviderSettings(
+  value: Partial<AiProviderSettings> | undefined,
+  fallback = defaultAiProviderSettings(),
+): AiProviderSettings {
+  return {
+    enabled: Boolean(value?.enabled),
+    endpoint: typeof value?.endpoint === 'string' ? value.endpoint.trim() : fallback.endpoint,
+    apiKey: typeof value?.apiKey === 'string' ? value.apiKey : fallback.apiKey,
+    model: typeof value?.model === 'string' && value.model.trim() ? value.model.trim() : fallback.model,
+    status: value?.status === 'ready' || value?.status === 'running' || value?.status === 'error' ? value.status : fallback.status,
+    message: typeof value?.message === 'string' && value.message.trim() ? value.message : fallback.message,
+  };
 }
 
 export function saveHistory(entries: HistoryEntry[]): void {
@@ -418,6 +551,66 @@ export function defaultPlotCalibration(type: UploadedAsset['type'] = 'Spectrum')
   };
 }
 
+export function validateUploadFile(file: File): string | null {
+  if (!(file instanceof File) || !file.size) {
+    return 'File kosong atau tidak valid.';
+  }
+
+  const fileName = file.name.trim();
+  const normalizedType = file.type.toLowerCase();
+  const isImage = normalizedType ? ALLOWED_IMAGE_TYPES.has(normalizedType) : /\.(png|jpe?g|webp|gif)$/i.test(fileName);
+  const isText = ALLOWED_TEXT_FILE_PATTERN.test(fileName);
+
+  if (!isImage && !isText) {
+    return 'Format file harus PNG, JPG, WEBP, GIF, CSV, atau TXT.';
+  }
+
+  if (isImage && file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    return 'Ukuran gambar maksimal 10 MB per file.';
+  }
+
+  if (isText && file.size > MAX_TEXT_UPLOAD_BYTES) {
+    return 'Ukuran file CSV/TXT maksimal 2 MB per file.';
+  }
+
+  return null;
+}
+
+export function guessDataType(name: string): UploadedAsset['type'] {
+  const value = name.toLowerCase();
+  if (value.includes('env')) return 'Envelope';
+  if (value.includes('wave') || value.includes('time') || value.endsWith('.csv')) return 'Waveform';
+  return 'Spectrum';
+}
+
+export function guessDirection(name: string): UploadedAsset['direction'] {
+  const value = name.toLowerCase();
+  if (/(^|[\s_-])(a|ax|axial)(?=$|[\s_.-])/.test(value)) return 'axial';
+  if (/(^|[\s_-])(h|hor|horizontal)(?=$|[\s_.-])/.test(value)) return 'horizontal';
+  if (/(^|[\s_-])(v|ver|vertical)(?=$|[\s_.-])/.test(value)) return 'vertical';
+  return 'radial';
+}
+
+export function nonImagePreview(name: string): string {
+  const safe = encodeURIComponent(name.slice(0, 24));
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='400'%3E%3Crect width='640' height='400' fill='%23060c16'/%3E%3Ctext x='50%25' y='46%25' text-anchor='middle' fill='%2367e8f9' font-family='monospace' font-size='34'%3EDATA FILE%3C/text%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' fill='%238ea0c3' font-family='monospace' font-size='18'%3E${safe}%3C/text%3E%3C/svg%3E`;
+}
+
+export function guessBearing(name: string): '1' | '2' | '3' | '4' {
+  const value = name.toLowerCase();
+  const match = value.match(/(?:bearing|brg|br|b)[\s_-]*([1-4])|(?:de|nde|inboard|outboard)/);
+  if (!match) {
+    return '1';
+  }
+  if (match[1]) {
+    return match[1] as '1' | '2' | '3' | '4';
+  }
+  if (value.includes('nde') || value.includes('outboard')) {
+    return '2';
+  }
+  return '1';
+}
+
 export async function extractImageDataFromAsset(asset: UploadedAsset): Promise<UploadedAsset> {
   if (!asset.src.startsWith('data:image/')) {
     return {
@@ -591,6 +784,306 @@ export function parseTabularPeaks(text: string): ExtractedPeak[] {
       amplitude,
       confidence: 95,
     }));
+}
+
+export function parsePeakInputRows(rows: PeakInputRow[]): Array<{ order: string; freq: number; amp: number }> {
+  return rows
+    .map((row) => ({
+      order: row.order,
+      freq: Number.parseFloat(row.freq),
+      amp: Number.parseFloat(row.amp),
+    }))
+    .filter((peak) => Number.isFinite(peak.freq) && Number.isFinite(peak.amp));
+}
+
+export function buildAiVisionRequest(
+  settings: AiProviderSettings,
+  uploads: UploadedAsset[],
+  context: MachineContext,
+): AiVisionRequest {
+  return {
+    model: settings.model.trim() || defaultAiProviderSettings().model,
+    context,
+    uploads: uploads.map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      type: asset.type,
+      bearing: asset.bearing,
+      direction: asset.direction,
+      calibration: asset.calibration,
+      localPeaks: asset.extractedPeaks ?? [],
+      imageDataUrl: asset.src.startsWith('data:image/') ? asset.src : undefined,
+    })),
+  };
+}
+
+export async function requestAiVisionAnalysis(
+  settings: AiProviderSettings,
+  uploads: UploadedAsset[],
+  context: MachineContext,
+  fetchImpl: typeof fetch = fetch,
+): Promise<AiVisionResult> {
+  if (!isAiProviderReady(settings)) {
+    throw new Error('AI provider belum aktif. Isi endpoint dan API key, atau gunakan ekstraksi lokal.');
+  }
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
+  try {
+    const response = await fetchImpl(settings.endpoint.trim(), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${settings.apiKey}`,
+      },
+      body: JSON.stringify(buildAiVisionRequest(settings, uploads, context)),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI provider returned HTTP ${response.status}.`);
+    }
+
+    return normalizeAiVisionResult(await response.json(), settings.model);
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
+export function normalizeAiVisionResult(value: unknown, fallbackModel: string): AiVisionResult {
+  const raw = (value && typeof value === 'object' ? value : {}) as Partial<AiVisionResult>;
+  const assets = Array.isArray(raw.assets) ? raw.assets : [];
+  return {
+    provider: typeof raw.provider === 'string' && raw.provider.trim() ? raw.provider.trim() : 'custom',
+    model: typeof raw.model === 'string' && raw.model.trim() ? raw.model.trim() : fallbackModel,
+    confidence: clamp(Number(raw.confidence), 0, 100) || 0,
+    machineContext: raw.machineContext && typeof raw.machineContext === 'object' ? raw.machineContext : undefined,
+    assets: assets.map((asset) => ({
+      uploadId: Number(asset.uploadId),
+      peaks: Array.isArray(asset.peaks)
+        ? asset.peaks
+            .map((peak, index) => ({
+              id: typeof peak.id === 'string' && peak.id ? peak.id : cryptoId(),
+              label: typeof peak.label === 'string' && peak.label ? peak.label : `AI${index + 1}`,
+              frequency: Number(peak.frequency),
+              amplitude: Number(peak.amplitude),
+              confidence: clamp(Number(peak.confidence), 0, 100) || 50,
+            }))
+            .filter((peak) => Number.isFinite(peak.frequency) && Number.isFinite(peak.amplitude))
+        : [],
+      evidence: Array.isArray(asset.evidence) ? asset.evidence.filter((item): item is string => typeof item === 'string') : [],
+    })).filter((asset) => Number.isFinite(asset.uploadId)),
+    evidence: Array.isArray(raw.evidence) ? raw.evidence.filter((item): item is string => typeof item === 'string') : [],
+  };
+}
+
+export function mergeAiVisionResultWithUploads(
+  uploads: UploadedAsset[],
+  aiResult: AiVisionResult | null,
+): {
+  uploads: UploadedAsset[];
+  evidence: Array<{ label: string; value: string; match: boolean }>;
+  confidencePenalty: number;
+} {
+  if (!aiResult) {
+    return {
+      uploads: uploads.map((asset) => ({
+        ...asset,
+        extractionSource: asset.extractionSource ?? 'local',
+      })),
+      evidence: [{ label: 'AI Assist', value: 'Local extraction only', match: true }],
+      confidencePenalty: 0,
+    };
+  }
+
+  let disagreementCount = 0;
+  let assistedCount = 0;
+  const mergedUploads = uploads.map((asset) => {
+    const aiAsset = aiResult.assets.find((item) => item.uploadId === asset.id);
+    if (!aiAsset?.peaks.length) {
+      return {
+        ...asset,
+        extractionSource: asset.extractionSource ?? 'local',
+      };
+    }
+
+    assistedCount += 1;
+    const localPeaks = asset.extractedPeaks ?? [];
+    const localDominant = localPeaks[0];
+    const aiDominant = aiAsset.peaks[0];
+    const frequencyDelta = localDominant
+      ? Math.abs(aiDominant.frequency - localDominant.frequency) / Math.max(1, localDominant.frequency)
+      : 0;
+    const amplitudeDelta = localDominant
+      ? Math.abs(aiDominant.amplitude - localDominant.amplitude) / Math.max(1, localDominant.amplitude)
+      : 0;
+    const disagrees = Boolean(localDominant && (frequencyDelta > 0.18 || amplitudeDelta > 0.65));
+    if (disagrees) {
+      disagreementCount += 1;
+    }
+
+    const localRemainder = localPeaks.filter((localPeak) =>
+      !aiAsset.peaks.some((aiPeak) => Math.abs(aiPeak.frequency - localPeak.frequency) / Math.max(1, localPeak.frequency) <= 0.08),
+    );
+    const peaks = [...aiAsset.peaks, ...localRemainder]
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 12)
+      .map((peak, index) => ({
+        ...peak,
+        id: peak.id || cryptoId(),
+        label: peak.label || `AI${index + 1}`,
+        frequency: Number(peak.frequency.toFixed(2)),
+        amplitude: Number(peak.amplitude.toFixed(2)),
+      }));
+
+    return {
+      ...asset,
+      extractedPeaks: peaks,
+      extractionStatus: 'extracted' as const,
+      extractionConfidence: Math.max(asset.extractionConfidence ?? 0, aiResult.confidence, ...peaks.map((peak) => peak.confidence)),
+      extractionConfidenceLabel: aiResult.confidence >= 74 ? 'high' as const : aiResult.confidence >= 48 ? 'medium' as const : 'low' as const,
+      extractionSource: 'ai-assisted' as const,
+      aiEvidence: [
+        ...aiAsset.evidence.map((description) => ({
+          source: aiResult.model,
+          description,
+          confidence: aiResult.confidence,
+        })),
+        ...aiResult.evidence.map((description) => ({
+          source: aiResult.provider,
+          description,
+          confidence: aiResult.confidence,
+        })),
+      ],
+      parseError: disagrees
+        ? 'AI result differs from local extraction. Review peaks before applying diagnosis.'
+        : asset.parseError,
+    };
+  });
+
+  const confidencePenalty = disagreementCount * 10;
+  return {
+    uploads: mergedUploads,
+    evidence: [
+      {
+        label: 'AI Assist',
+        value: assistedCount ? `${assistedCount} file(s) merged with ${aiResult.provider}` : 'AI returned no usable peaks',
+        match: assistedCount > 0,
+      },
+      ...(disagreementCount
+        ? [{
+            label: 'AI / Local Agreement',
+            value: `${disagreementCount} file(s) need manual review`,
+            match: false,
+          }]
+        : [{
+            label: 'AI / Local Agreement',
+            value: 'AI and local extraction are aligned',
+            match: true,
+          }]),
+    ],
+    confidencePenalty,
+  };
+}
+
+export function buildReportInsightsFromRows(
+  rows: PeakInputRow[],
+  context: MachineContext,
+): { markers: FrequencyMarker[]; peaks: PeakInsight[] } {
+  const parsedPeaks = parsePeakInputRows(rows);
+  return {
+    markers: frequencyMarkers(context),
+    peaks: buildPeakInsights(parsedPeaks, context),
+  };
+}
+
+export function buildReportPayloadFromRows(
+  rows: PeakInputRow[],
+  context: MachineContext,
+  diagnosis: DiagnosisSummary | null,
+  uploads: UploadedAsset[],
+): {
+  context: MachineContext;
+  markers: FrequencyMarker[];
+  peaks: PeakInsight[];
+  diagnosis: DiagnosisSummary | null;
+  uploads: Array<{
+    name: string;
+    type: UploadedAsset['type'];
+    bearing: UploadedAsset['bearing'];
+    direction: UploadedAsset['direction'];
+    extractionStatus?: UploadedAsset['extractionStatus'];
+    calibration?: UploadedAsset['calibration'];
+    extractedPeaks?: UploadedAsset['extractedPeaks'];
+    extractionConfidence?: UploadedAsset['extractionConfidence'];
+    extractionSource?: UploadedAsset['extractionSource'];
+    aiEvidence?: UploadedAsset['aiEvidence'];
+  }>;
+} {
+  const insights = buildReportInsightsFromRows(rows, context);
+  return {
+    context,
+    markers: insights.markers,
+    peaks: insights.peaks,
+    diagnosis,
+    uploads: uploads.map((asset) => ({
+      name: asset.name,
+      type: asset.type,
+      bearing: asset.bearing,
+      direction: asset.direction,
+      extractionStatus: asset.extractionStatus,
+      calibration: asset.calibration,
+      extractedPeaks: asset.extractedPeaks,
+      extractionConfidence: asset.extractionConfidence,
+      extractionSource: asset.extractionSource,
+      aiEvidence: asset.aiEvidence,
+    })),
+  };
+}
+
+export function buildWorkbookRowsFromUploads(
+  rows: PeakInputRow[],
+  context: MachineContext,
+  uploads: UploadedAsset[],
+): {
+  peakRows: Array<{ Rank: number; 'Frequency Hz': number; 'Amplitude mm/s': number; 'Possible Source': string }>;
+  markerRows: Array<{ Marker: string; 'Frequency Hz': number | ''; Source: string }>;
+  uploadRows: Array<{
+    File: string;
+    Point: string;
+    Direction: UploadedAsset['direction'];
+    Type: UploadedAsset['type'];
+    Frequency: number;
+    Amplitude: number;
+    Confidence: number;
+  }>;
+} {
+  const insights = buildReportInsightsFromRows(rows, context);
+  return {
+    peakRows: insights.peaks.map((row) => ({
+      Rank: row.rank,
+      'Frequency Hz': row.frequency,
+      'Amplitude mm/s': row.amplitude,
+      'Possible Source': row.possibleSource,
+    })),
+    markerRows: insights.markers.map((marker) => ({
+      Marker: marker.label,
+      'Frequency Hz': marker.freq ?? '',
+      Source: marker.source,
+    })),
+    uploadRows: uploads.flatMap((asset) =>
+      (asset.extractedPeaks ?? []).map((peak) => ({
+        File: asset.name,
+        Point: `B${asset.bearing}`,
+        Direction: asset.direction,
+        Type: asset.type,
+        Frequency: peak.frequency,
+        Amplitude: peak.amplitude,
+        Confidence: peak.confidence,
+      })),
+    ),
+  };
 }
 
 export function extractionConfidencePenalty(uploads: UploadedAsset[]): number {
@@ -1073,6 +1566,87 @@ export function inferUploadFault(
       bearing: bearing as '1' | '2' | '3' | '4',
       count: uploads.filter((upload) => upload.bearing === bearing).length,
     })),
+  };
+}
+
+export function buildAiProcessingSteps(uploadCount: number): string[] {
+  return [
+    `Loading ${uploadCount} image data...`,
+    'Classifying spectrum and waveform...',
+    'Mapping data to bearing position...',
+    'Detecting spectrum grid lines...',
+    'Extracting signal trace...',
+    'Identifying peak frequencies...',
+    'Calculating harmonic ratios...',
+    'Matching against Mobius library...',
+    'Finalizing diagnosis...',
+  ];
+}
+
+export function runAiUploadAnalysis(
+  uploads: UploadedAsset[],
+  rpm: number,
+  context: MachineContext,
+): {
+  result: UploadAnalysisResult;
+  finalResult: UploadAnalysisResult;
+  analysisRows: PeakInputRow[];
+  analysisPeaks: Array<{ order: string; freq: number; amp: number }>;
+  extractedResults: AnalysisResultItem[];
+  penalty: number;
+  lowConfidenceUploads: UploadedAsset[];
+} {
+  const result = inferUploadFault(uploads, rpm, context);
+  const extractedRows = mergeExtractedPeaksToRows(uploads);
+  const analysisRows = extractedRows.length ? extractedRows : result.recommendedPeaks;
+  const analysisPeaks = parsePeakInputRows(analysisRows);
+  const penalty = extractionConfidencePenalty(uploads);
+  const extractedResults = rankSpectrumPeaks(
+    analysisPeaks,
+    result.machineContext.rpm,
+    result.machineContext.direction,
+    result.machineContext,
+  );
+  const topFault = extractedResults[0]?.key ?? result.faultKey;
+  const lowConfidenceUploads = uploads.filter((asset) =>
+    asset.extractionStatus === 'needs-calibration' || asset.extractionStatus === 'failed',
+  );
+  const extractionEvidence = [
+    ...result.evidence,
+    {
+      label: 'Extracted Peaks',
+      value: `${analysisPeaks.length} peak(s) from photo/CSV`,
+      match: extractedRows.length > 0,
+    },
+    {
+      label: 'Extraction Confidence',
+      value: `${Math.max(0, 100 - penalty * 3).toFixed(0)}% quality gate`,
+      match: penalty <= 12,
+    },
+    ...(lowConfidenceUploads.length
+      ? [{
+          label: 'Manual Calibration',
+          value: `${lowConfidenceUploads.length} file(s) need review`,
+          match: false,
+        }]
+      : []),
+  ];
+  const finalResult: UploadAnalysisResult = {
+    ...result,
+    faultKey: topFault,
+    confidence: Math.max(20, Math.min(result.confidence, extractedResults[0]?.confidence ?? result.confidence) - penalty),
+    evidence: extractionEvidence,
+    recommendedPeaks: analysisRows,
+  };
+
+  return {
+    result,
+    finalResult,
+    analysisRows,
+    analysisPeaks,
+    extractedResults,
+    penalty,
+    lowConfidenceUploads,
   };
 }
 

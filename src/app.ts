@@ -8,30 +8,47 @@ import {
 import {
   appendHistory,
   buildDiagnosisSummary,
+  buildAiProcessingSteps,
   buildPeakInsights,
+  buildReportInsightsFromRows,
+  buildReportPayloadFromRows,
+  buildWorkbookRowsFromUploads,
   calcBearingFrequencies,
   defaultPlotCalibration,
   defaultAppState,
   detectRpmFromPeaks,
   effectiveRpm,
   extractImageDataFromAsset,
-  extractionConfidencePenalty,
+  fetchAuthConnectionState,
   frequencyMarkers,
   formatHz,
   formatMmps,
   getSupabaseClient,
+  getSignedInUserId,
+  guessBearing,
+  guessDataType,
+  guessDirection,
   highestPoint,
-  inferUploadFault,
+  isAiProviderReady,
   isSupabaseConfigured,
   loadPersistedAppState,
   mergeExtractedPeaksToRows,
+  mergeAiVisionResultWithUploads,
+  nonImagePreview,
+  normalizeMachineContext,
+  parsePeakInputRows,
   persistAppState,
   parseTabularPeaks,
   rankSpectrumPeaks,
   recommendationFor,
+  requestAiVisionAnalysis,
+  runAiUploadAnalysis,
   seedHistoryEntry,
   severityClass,
+  signInWithPassword,
+  signOutSession,
   statusClass,
+  validateUploadFile,
 } from './services';
 import type {
   AppState,
@@ -101,6 +118,7 @@ let authBootstrapped = false;
 let pendingUploadPreset: Partial<UploadedAsset> | null = null;
 let visualsLoadPromise: Promise<void> | null = null;
 let toastTimer = 0;
+const MAX_UPLOAD_COUNT = 12;
 
 function qs<T extends Element>(selector: string, scope: ParentNode = document): T | null {
   return scope.querySelector(selector) as T | null;
@@ -179,6 +197,29 @@ function renderDirectionButtons(activeDirection: FaultDirection): string {
       return `
         <button type="button" class="direction-btn ${active}" data-action="set-direction" data-direction="${option.key}">
           ${escapeHtml(option.label)}
+        </button>
+      `;
+    })
+    .join('');
+}
+
+function renderMachineLayoutButtons(context: MachineContext): string {
+  const currentLayout = context.machineType === 'motor' && context.drivenComponent === 'motor'
+    ? 'motor'
+    : context.drivenComponent;
+  const options: Array<{ key: MachineContext['machineType']; label: string; hint: string }> = [
+    { key: 'motor', label: 'Motor Only', hint: 'Rotor, stator, shaft' },
+    { key: 'pump', label: 'Motor + Pump', hint: 'Direct train' },
+    { key: 'fan', label: 'Motor + Fan', hint: 'Blower train' },
+  ];
+
+  return options
+    .map((option) => {
+      const active = option.key === currentLayout ? 'is-active' : '';
+      return `
+        <button type="button" class="layout-btn ${active}" data-action="set-machine-layout" data-layout="${option.key}">
+          <span>${escapeHtml(option.label)}</span>
+          <small>${escapeHtml(option.hint)}</small>
         </button>
       `;
     })
@@ -280,6 +321,128 @@ function renderBearingPanel(rpm: number, bearingModel: string): string {
   `;
 }
 
+function renderFeatureNav(activeTab: AppState['currentTab']): string {
+  return `
+    <nav class="feature-nav panel" id="tabBar">
+      ${tabs
+        .map((tab) => {
+          const active = tab.key === activeTab ? 'is-active' : '';
+          return `
+            <button type="button" class="tab-btn ${active}" data-action="switch-tab" data-tab="${tab.key}">
+              <span class="tab-btn__icon" aria-hidden="true">${renderFeatureIcon(tab.key)}</span>
+              <span class="tab-btn__copy">
+                <span class="tab-btn__label">${escapeHtml(tab.label)}</span>
+                <small>${escapeHtml(tab.hint)}</small>
+              </span>
+            </button>
+          `;
+        })
+        .join('')}
+    </nav>
+  `;
+}
+
+function renderFeatureIcon(key: AppState['currentTab']): string {
+  const common = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
+  const paths: Record<AppState['currentTab'], string> = {
+    sim: '<path d="M12 3 4.5 7.2v8.6L12 20l7.5-4.2V7.2L12 3Z"/><path d="M12 8v8"/><path d="m4.8 7.4 7.2 4.1 7.2-4.1"/>',
+    analysis: '<path d="M4 18h16"/><path d="M5 15l3-6 3 4 3-8 5 10"/>',
+    ai: '<path d="M8 3v3"/><path d="M16 3v3"/><rect x="5" y="6" width="14" height="12" rx="3"/><path d="M9 11h.01"/><path d="M15 11h.01"/><path d="M9 15h6"/>',
+    equipment: '<path d="M4 19V8l8-4 8 4v11"/><path d="M8 19v-6h8v6"/><path d="M9 9h.01"/><path d="M15 9h.01"/>',
+    reference: '<path d="M6 4h9a3 3 0 0 1 3 3v13H8a2 2 0 0 1-2-2V4Z"/><path d="M9 8h5"/><path d="M9 12h6"/><path d="M9 16h4"/>',
+  };
+  return `<svg ${common} aria-hidden="true">${paths[key]}</svg>`;
+}
+
+function renderSimulationStats(state: AppState): string {
+  const profile = faultProfiles[state.faultKey];
+  return `
+    <div class="panel stat-strip sim-side-stats">
+      <div class="stat">
+        <span>RPM</span>
+        <strong id="rpmDisplaySide">${state.rpm}</strong>
+      </div>
+      <div class="stat">
+        <span>LOAD</span>
+        <strong id="loadDisplaySide">${state.load}%</strong>
+      </div>
+      <div class="stat">
+        <span>OVERALL</span>
+        <strong id="overallDisplaySide">${formatMmps(profile.overall)}</strong>
+      </div>
+      <div class="stat">
+        <span>ZONE</span>
+        <strong id="zoneDisplaySide">ZONE ${profile.severity}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderControlDeck(state: AppState): string {
+  return `
+    <div class="panel control-card">
+      <div class="panel-title">Control Deck</div>
+      <div class="view-card__subtitle">Atur RPM, load, dan fault profile untuk melihat respons motor industri yang lebih realistis.</div>
+      <label class="field">
+        <span>RPM</span>
+        <input id="rpmSlider" type="range" min="300" max="3600" value="${state.rpm}" />
+        <div class="field__foot"><strong id="rpmVal">${state.rpm}</strong> RPM</div>
+      </label>
+      <label class="field">
+        <span>Load</span>
+        <input id="loadSlider" type="range" min="0" max="100" value="${state.load}" />
+        <div class="field__foot"><strong id="loadVal">${state.load}</strong>%</div>
+      </label>
+      <div class="field">
+        <span>Direction</span>
+        <div class="direction-grid" id="directionGrid">
+          ${renderDirectionButtons(state.direction)}
+        </div>
+      </div>
+      <div class="field">
+        <span>Machine Layout</span>
+        <div class="machine-layout-grid" id="machineLayoutGrid">
+          ${renderMachineLayoutButtons(state.machineContext)}
+        </div>
+      </div>
+      <div class="field">
+        <span>Fault Profile</span>
+        <div class="fault-grid" id="faultGrid">
+          ${renderFaultButtons(state.faultKey)}
+        </div>
+      </div>
+      <label class="field">
+        <span>Bearing Model</span>
+        <input
+          id="bearingModel"
+          type="text"
+          placeholder="e.g. 6205, SKF 6305"
+          value="${escapeHtml(state.machineContext.bearingModel)}"
+        />
+      </label>
+      ${renderBearingPanel(state.rpm, state.machineContext.bearingModel)}
+    </div>
+  `;
+}
+
+function renderSimulationSidePanel(state: AppState): string {
+  return `
+    <aside class="sim-side">
+      ${renderSimulationStats(state)}
+      ${renderControlDeck(state)}
+      <div class="panel diagnosis-card">
+        <div class="panel-title">Diagnosis</div>
+        <div id="diagPanel"></div>
+        <div class="recommendations" id="recommendations"></div>
+      </div>
+      <div class="panel history-card">
+        <div class="panel-title">Recent History</div>
+        <div id="historyList" class="history-list">${renderHistoryCards(state.history)}</div>
+      </div>
+    </aside>
+  `;
+}
+
 function renderSidebar(state: AppState): string {
   const connectionChip = state.connection.mode === 'signed-in'
     ? 'CONNECTED'
@@ -296,8 +459,8 @@ function renderSidebar(state: AppState): string {
         <div class="brand-card__top">
           <div class="brand-mark">M</div>
           <div>
-            <div class="brand-name">Mobius Vibration</div>
-            <div class="brand-sub">Engineer diagnostic cockpit</div>
+            <div class="brand-name">Mobius Simulation</div>
+            <div class="brand-sub">CBM Jeranjang diagnostic</div>
           </div>
         </div>
         <div class="chip-row">
@@ -308,71 +471,7 @@ function renderSidebar(state: AppState): string {
         <div class="brand-note" id="authMessage">${escapeHtml(state.connection.message)}</div>
       </div>
 
-      <div class="panel stat-strip">
-        <div class="stat">
-          <span>RPM</span>
-          <strong id="rpmDisplaySide">${state.rpm}</strong>
-        </div>
-        <div class="stat">
-          <span>LOAD</span>
-          <strong id="loadDisplaySide">${state.load}%</strong>
-        </div>
-        <div class="stat">
-          <span>OVERALL</span>
-          <strong id="overallDisplaySide">${formatMmps(faultProfiles[state.faultKey].overall)}</strong>
-        </div>
-        <div class="stat">
-          <span>ZONE</span>
-          <strong id="zoneDisplaySide">ZONE ${faultProfiles[state.faultKey].severity}</strong>
-        </div>
-      </div>
-
-      <div class="panel control-card">
-        <div class="panel-title">Control Deck</div>
-        <label class="field">
-          <span>RPM</span>
-          <input id="rpmSlider" type="range" min="300" max="3600" value="${state.rpm}" />
-          <div class="field__foot"><strong id="rpmVal">${state.rpm}</strong> RPM</div>
-        </label>
-        <label class="field">
-          <span>Load</span>
-          <input id="loadSlider" type="range" min="0" max="100" value="${state.load}" />
-          <div class="field__foot"><strong id="loadVal">${state.load}</strong>%</div>
-        </label>
-        <div class="field">
-          <span>Direction</span>
-          <div class="direction-grid" id="directionGrid">
-            ${renderDirectionButtons(state.direction)}
-          </div>
-        </div>
-        <div class="field">
-          <span>Fault Profile</span>
-          <div class="fault-grid" id="faultGrid">
-            ${renderFaultButtons(state.faultKey)}
-          </div>
-        </div>
-        <label class="field">
-          <span>Bearing Model</span>
-          <input
-            id="bearingModel"
-            type="text"
-            placeholder="e.g. 6205, SKF 6305"
-            value=""
-          />
-        </label>
-        ${renderBearingPanel(state.rpm, '')}
-      </div>
-
-      <div class="panel diagnosis-card">
-        <div class="panel-title">Diagnosis</div>
-        <div id="diagPanel"></div>
-        <div class="recommendations" id="recommendations"></div>
-      </div>
-
-      <div class="panel history-card">
-        <div class="panel-title">Recent History</div>
-        <div id="historyList" class="history-list">${renderHistoryCards(state.history)}</div>
-      </div>
+      ${renderFeatureNav(state.currentTab)}
 
       <div class="panel auth-card">
         <div class="panel-title">Supabase</div>
@@ -409,11 +508,12 @@ function simStatusLabel(faultKey: FaultKey): string {
 }
 
 function renderTopBar(state: AppState): string {
+  const densityLabel = state.uiDensity === 'compact' ? 'Compact' : state.uiDensity === 'large' ? 'Large' : 'Normal';
   return `
     <header class="topbar panel">
       <div class="topbar__brand">
-        <div class="topbar__title">Mobius Vibration Simulator Pro</div>
-        <div class="topbar__subtitle">Modernized diagnostic cockpit for technician workflows</div>
+        <div class="topbar__title">Mobius Simulation Dashboard</div>
+        <div class="topbar__subtitle">CBM Jeranjang diagnostic cockpit for engineering workflows</div>
       </div>
       <div class="topbar__stats">
         <div class="topbar__stat">
@@ -430,22 +530,11 @@ function renderTopBar(state: AppState): string {
         </div>
       </div>
       <div class="topbar__actions">
+        <button type="button" class="ghost-btn" data-action="toggle-ui-density">Size ${densityLabel}</button>
+        <button type="button" class="ghost-btn" data-action="toggle-ui-text">${state.uiTextCollapsed ? 'Show Text' : 'Hide Text'}</button>
         <button type="button" class="ghost-btn" data-action="reset-camera">Reset View</button>
         <button type="button" class="ghost-btn" data-action="toggle-wireframe">Wireframe</button>
       </div>
-      <nav class="tabbar" id="tabBar">
-        ${tabs
-          .map((tab) => {
-            const active = tab.key === state.currentTab ? 'is-active' : '';
-            return `
-              <button type="button" class="tab-btn ${active}" data-action="switch-tab" data-tab="${tab.key}">
-                <span>${escapeHtml(tab.label)}</span>
-                <small>${escapeHtml(tab.hint)}</small>
-              </button>
-            `;
-          })
-          .join('')}
-      </nav>
     </header>
   `;
 }
@@ -460,28 +549,12 @@ function renderSimView(state: AppState): string {
 
   return `
     <section id="simView" class="view ${state.currentTab === 'sim' ? '' : 'is-hidden'}">
-      <div class="hero-grid">
-        <article class="panel stat-strip stat-strip--wide">
-          <div class="stat">
-            <span>RPM</span>
-            <strong id="rpmDisplaySim">${state.rpm}</strong>
-          </div>
-          <div class="stat">
-            <span>LOAD</span>
-            <strong id="loadDisplaySim">${state.load}%</strong>
-          </div>
-          <div class="stat">
-            <span>OVERALL</span>
-            <strong id="overallDisplaySim">${formatMmps(profile.overall)}</strong>
-          </div>
-          <div class="stat">
-            <span>ZONE</span>
-            <strong id="zoneDisplaySim">ZONE ${profile.severity}</strong>
-          </div>
-        </article>
-
-        <article class="panel machine-card">
+      <div class="sim-layout">
+        ${renderSimulationSidePanel(state)}
+      <div class="sim-stage">
+          <article class="panel machine-card">
           <div class="panel-label">3D Machine Visualization</div>
+          <div class="view-card__subtitle">Visual 3D menampilkan motor train, shaft, coupling, sensor, dan komponen driven sebagai referensi teknisi.</div>
           <div id="canvas3d" class="canvas-shell canvas-shell--three"></div>
           <div class="canvas-overlay canvas-overlay--left">
             <button type="button" class="ghost-btn ghost-btn--small" data-action="reset-camera">Reset View</button>
@@ -527,59 +600,58 @@ function renderSimView(state: AppState): string {
             <div><span>Point</span><strong id="machineMetaPoint">${escapeHtml(state.machineContext.measurementPoint)} / ${escapeHtml(state.machineContext.direction.toUpperCase())}</strong></div>
             <div><span>Upload Source</span><strong id="machineMetaSource">${escapeHtml(state.machineContext.sourceUploadName)}</strong></div>
           </div>
-        </article>
+          </article>
 
-        <div class="chart-grid">
-          <article class="panel chart-card">
-            <div class="panel-label panel-label--cyan">Time Waveform</div>
-            <canvas id="waveCanvas" class="chart-canvas"></canvas>
-          </article>
-          <article class="panel chart-card">
-            <div class="panel-label panel-label--purple">FFT Spectrum (Orders)</div>
-            <canvas id="fftCanvas" class="chart-canvas"></canvas>
-          </article>
-          <article class="panel chart-card">
-            <div class="panel-label panel-label--orange">Phase Diagram</div>
-            <canvas id="phaseCanvas" class="chart-canvas"></canvas>
-          </article>
-          <article class="panel chart-card">
-            <div class="panel-label panel-label--green">Shaft Orbit</div>
-            <canvas id="orbitCanvas" class="chart-canvas"></canvas>
+          <div class="chart-grid">
+            <article class="panel chart-card">
+              <div class="panel-label panel-label--cyan">Time Waveform</div>
+              <canvas id="waveCanvas" class="chart-canvas"></canvas>
+            </article>
+            <article class="panel chart-card">
+              <div class="panel-label panel-label--purple">FFT Spectrum (Orders)</div>
+              <canvas id="fftCanvas" class="chart-canvas"></canvas>
+            </article>
+            <article class="panel chart-card">
+              <div class="panel-label panel-label--orange">Phase Diagram</div>
+              <canvas id="phaseCanvas" class="chart-canvas"></canvas>
+            </article>
+            <article class="panel chart-card">
+              <div class="panel-label panel-label--green">Shaft Orbit</div>
+              <canvas id="orbitCanvas" class="chart-canvas"></canvas>
+            </article>
+          </div>
+
+          <article class="panel summary-card">
+            <div class="summary-card__top">
+              <div>
+                <div class="panel-title">Diagnostic Summary</div>
+                <div class="summary-card__subtitle">Live fault interpretation from the active machine profile.</div>
+              </div>
+              <div class="summary-pill severity-${profile.severity.toLowerCase()}" id="statusTextSim">${escapeHtml(simStatusLabel(state.faultKey))}</div>
+            </div>
+            <div class="info-grid">
+              <div class="info-card">
+                <span>Speed</span>
+                <strong id="infoRpm">${state.rpm} RPM</strong>
+              </div>
+              <div class="info-card">
+                <span>1X Freq</span>
+                <strong id="info1X">${formatHz(state.rpm / 60)}</strong>
+              </div>
+              <div class="info-card">
+                <span>BPF</span>
+                <strong id="infoBPF">${formatHz((state.rpm / 60) * 6, 0)}</strong>
+              </div>
+            </div>
+            <div class="peak-grid">
+              <div class="peak-card"><span>1X</span><strong id="peak1X">${formatMmps(peakByOrder(1))}</strong></div>
+              <div class="peak-card"><span>2X</span><strong id="peak2X">${formatMmps(peakByOrder(2))}</strong></div>
+              <div class="peak-card"><span>3X</span><strong id="peak3X">${formatMmps(peakByOrder(3))}</strong></div>
+              <div class="peak-card"><span>4X</span><strong id="peak4X">${formatMmps(peakByOrder(4))}</strong></div>
+              <div class="peak-card peak-card--highlight"><span>Max</span><strong id="peakMax">${formatMmps(Math.max(...peaks.map((p) => p.a)))}</strong></div>
+            </div>
           </article>
         </div>
-
-        <article class="panel summary-card">
-          <div class="summary-card__top">
-            <div>
-              <div class="panel-title">Diagnostic Summary</div>
-              <div class="summary-card__subtitle">Live fault interpretation from the active machine profile.</div>
-            </div>
-            <div class="summary-pill severity-${profile.severity.toLowerCase()}" id="statusTextSim">${escapeHtml(simStatusLabel(state.faultKey))}</div>
-          </div>
-          <div id="diagPanel"></div>
-          <div class="recommendations" id="recommendations"></div>
-          <div class="info-grid">
-            <div class="info-card">
-              <span>Speed</span>
-              <strong id="infoRpm">${state.rpm} RPM</strong>
-            </div>
-            <div class="info-card">
-              <span>1X Freq</span>
-              <strong id="info1X">${formatHz(state.rpm / 60)}</strong>
-            </div>
-            <div class="info-card">
-              <span>BPF</span>
-              <strong id="infoBPF">${formatHz((state.rpm / 60) * 6, 0)}</strong>
-            </div>
-          </div>
-          <div class="peak-grid">
-            <div class="peak-card"><span>1X</span><strong id="peak1X">${formatMmps(peakByOrder(1))}</strong></div>
-            <div class="peak-card"><span>2X</span><strong id="peak2X">${formatMmps(peakByOrder(2))}</strong></div>
-            <div class="peak-card"><span>3X</span><strong id="peak3X">${formatMmps(peakByOrder(3))}</strong></div>
-            <div class="peak-card"><span>4X</span><strong id="peak4X">${formatMmps(peakByOrder(4))}</strong></div>
-            <div class="peak-card peak-card--highlight"><span>Max</span><strong id="peakMax">${formatMmps(Math.max(...peaks.map((p) => p.a)))}</strong></div>
-          </div>
-        </article>
       </div>
     </section>
   `;
@@ -658,23 +730,11 @@ function renderFrequencyMarkerPanel(context: MachineContext): string {
 }
 
 function currentPeakValues(): Array<{ order: string; freq: number; amp: number }> {
-  return state.peakRows
-    .map((row) => ({
-      order: row.order,
-      freq: Number.parseFloat(row.freq),
-      amp: Number.parseFloat(row.amp),
-    }))
-    .filter((peak) => Number.isFinite(peak.freq) && Number.isFinite(peak.amp));
+  return parsePeakInputRows(state.peakRows);
 }
 
 function currentPeakValuesFromRows(rows: PeakInputRow[]): Array<{ order: string; freq: number; amp: number }> {
-  return rows
-    .map((row) => ({
-      order: row.order,
-      freq: Number.parseFloat(row.freq),
-      amp: Number.parseFloat(row.amp),
-    }))
-    .filter((peak) => Number.isFinite(peak.freq) && Number.isFinite(peak.amp));
+  return parsePeakInputRows(rows);
 }
 
 function renderPeakInsightTable(context: MachineContext): string {
@@ -702,11 +762,27 @@ function renderPeakInsightTable(context: MachineContext): string {
   `;
 }
 
+function priorityBreakdownRows(summary: NonNullable<AppState['diagnosisSummary']>): Array<{ label: string; value: number; hint: string }> {
+  const breakdown = summary.priorityBreakdown;
+  if (!breakdown) {
+    return [];
+  }
+
+  return [
+    { label: 'Severity', value: breakdown.severity, hint: 'Asset condition weight 35%' },
+    { label: 'Criticality', value: breakdown.criticality, hint: 'Machine criticality weight 25%' },
+    { label: 'Production', value: breakdown.production, hint: 'Production impact weight 20%' },
+    { label: 'Safety', value: breakdown.safety, hint: 'Safety impact weight 10%' },
+    { label: 'Trend', value: breakdown.trend, hint: 'Trend proxy weight 10%' },
+  ];
+}
+
 function renderDiagnosisSummaryPanel(): string {
   const summary = state.diagnosisSummary;
   if (!summary) {
     return `<div class="empty-state"><div class="empty-state__title">Belum ada diagnosis bertingkat</div><div class="empty-state__text">Klik Analyze Spectrum untuk menghasilkan probable fault, secondary fault, evidence, priority, dan action.</div></div>`;
   }
+  const priorityRows = priorityBreakdownRows(summary);
 
   return `
     <div class="diagnosis-summary-grid">
@@ -726,6 +802,20 @@ function renderDiagnosisSummaryPanel(): string {
         <div class="recommendations">${summary.recommendedActions.map((item, index) => `<div class="recommendation-row"><span class="recommendation-row__icon">${index + 1}</span><span>${escapeHtml(item)}</span></div>`).join('')}</div>
       </div>
     </div>
+    ${priorityRows.length ? `
+      <div class="priority-breakdown-shell">
+        <div class="panel-label panel-label--cyan">Priority Breakdown</div>
+        <div class="priority-breakdown-grid">
+          ${priorityRows.map((item) => `
+            <div class="priority-breakdown-card">
+              <span>${escapeHtml(item.label)}</span>
+              <strong>${item.value}</strong>
+              <small>${escapeHtml(item.hint)}</small>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
     <div class="chip-row">
       ${summary.notDominant.map((item) => `<span class="chip chip--muted">Not dominant: ${escapeHtml(item)}</span>`).join('')}
     </div>
@@ -933,6 +1023,50 @@ function renderUploadSummary(assets: UploadedAsset[]): string {
     .join('');
 }
 
+function extractionSourceLabel(asset: UploadedAsset): string {
+  if (asset.extractionSource === 'ai-assisted') return 'AI Assisted';
+  if (asset.extractionSource === 'manual-corrected') return 'Manual Corrected';
+  return 'Local';
+}
+
+function renderAiProviderSettings(state: AppState): string {
+  const settings = state.aiProviderSettings;
+  const ready = isAiProviderReady(settings);
+  const status = ready ? 'ready' : settings.enabled ? 'error' : 'idle';
+  const statusText = ready ? 'Ready' : settings.enabled ? 'Need endpoint/key' : 'Local only';
+
+  return `
+    <div class="panel view-card ai-provider-panel">
+      <div class="provider-head">
+        <div>
+          <div class="panel-title">AI Provider Settings</div>
+          <div class="view-card__subtitle">Provider-neutral demo mode. Endpoint harus menerima JSON vision request dan mengembalikan JSON peaks/evidence.</div>
+        </div>
+        <span class="provider-status provider-status--${status}">${escapeHtml(statusText)}</span>
+      </div>
+      <label class="provider-toggle">
+        <input type="checkbox" data-ai-provider-field="enabled" ${settings.enabled ? 'checked' : ''} />
+        <span>Enable AI assist for uploaded images</span>
+      </label>
+      <div class="provider-grid">
+        <label class="mini-field">
+          <span>Endpoint</span>
+          <input type="text" placeholder="https://example.com/vision" value="${escapeHtml(settings.endpoint)}" data-ai-provider-field="endpoint" />
+        </label>
+        <label class="mini-field">
+          <span>API Key</span>
+          <input type="password" placeholder="Stored locally in this browser" value="${escapeHtml(settings.apiKey)}" data-ai-provider-field="apiKey" autocomplete="off" />
+        </label>
+        <label class="mini-field">
+          <span>Model</span>
+          <input type="text" placeholder="vision-default" value="${escapeHtml(settings.model)}" data-ai-provider-field="model" />
+        </label>
+      </div>
+      <div class="provider-note">${escapeHtml(settings.message)}</div>
+    </div>
+  `;
+}
+
 function renderUploadCards(assets: UploadedAsset[]): string {
   if (!assets.length) {
     return `
@@ -950,6 +1084,7 @@ function renderUploadCards(assets: UploadedAsset[]): string {
         const status = asset.extractionStatus ?? 'pending';
         const confidence = asset.extractionConfidence ?? 0;
         const peaks = asset.extractedPeaks ?? [];
+        const sourceLabel = extractionSourceLabel(asset);
         const statusText = status === 'needs-calibration'
           ? 'Needs calibration'
           : status === 'extracted'
@@ -969,7 +1104,10 @@ function renderUploadCards(assets: UploadedAsset[]): string {
                 <div class="upload-card__name">${escapeHtml(asset.name)}</div>
                 <div class="upload-card__meta">${escapeHtml(asset.type)} | Bearing ${asset.bearing} | ${escapeHtml(String(asset.direction).toUpperCase())}</div>
               </div>
-              <span class="extraction-badge extraction-badge--${status}">${escapeHtml(statusText)} ${confidence ? `${confidence.toFixed(0)}%` : ''}</span>
+              <div class="badge-stack">
+                <span class="source-badge source-badge--${asset.extractionSource ?? 'local'}">${escapeHtml(sourceLabel)}</span>
+                <span class="extraction-badge extraction-badge--${status}">${escapeHtml(statusText)} ${confidence ? `${confidence.toFixed(0)}%` : ''}</span>
+              </div>
             </div>
             <div class="upload-card__grid">
               <select data-action="update-upload" data-upload-id="${asset.id}" data-upload-field="type">
@@ -998,6 +1136,7 @@ function renderUploadCards(assets: UploadedAsset[]): string {
                 </div>
                 <button type="button" class="ghost-btn ghost-btn--small" data-action="extract-upload" data-upload-id="${asset.id}">Extract Photo</button>
               </div>
+              ${asset.aiEvidence?.length ? `<div class="ai-evidence-list">${asset.aiEvidence.slice(0, 3).map((item) => `<span>${escapeHtml(item.description)} (${item.confidence.toFixed(0)}%)</span>`).join('')}</div>` : ''}
               <div class="calibration-grid">
                 ${renderCalibrationInput(asset.id, 'xMin', 'X Min', calibration.xMin)}
                 ${renderCalibrationInput(asset.id, 'xMax', asset.type === 'Waveform' ? 'Time Max' : 'Freq Max', calibration.xMax)}
@@ -1109,6 +1248,8 @@ function renderUploadView(state: AppState): string {
 
   return `
     <section id="aiView" class="view ${state.currentTab === 'ai' ? '' : 'is-hidden'}">
+      ${renderAiProviderSettings(state)}
+
       <div class="panel view-card">
         <div class="panel-title">Photo-First Spectrum/Waveform Analysis</div>
         <div class="view-card__subtitle">Upload foto spectrum, waveform, atau envelope. Aplikasi akan ekstrak trace/peak dari gambar, lalu kamu bisa koreksi axis dan peak sebelum diagnosis.</div>
@@ -1116,7 +1257,7 @@ function renderUploadView(state: AppState): string {
           <div class="upload-zone__icon">+</div>
           <div class="upload-zone__title">Click to upload spectrum/waveform photo</div>
           <div class="upload-zone__text">Image adalah jalur utama. CSV/TXT tetap didukung untuk import cepat jika data numerik tersedia.</div>
-          <input id="photoInput" type="file" accept="image/*,.csv,.txt" multiple hidden />
+          <input id="photoInput" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.csv,.txt" multiple hidden />
         </div>
         ${renderUploadSlots()}
       </div>
@@ -1203,6 +1344,15 @@ function renderCoverageCard(bearing: '1' | '2' | '3' | '4', count: number): stri
   `;
 }
 
+function equipmentPayload(row: EquipmentRecord): string {
+  return encodeURIComponent(JSON.stringify({
+    equipment: row.equipment,
+    unit: row.unit,
+    status: row.status,
+    vibMax: row.vibMax,
+  }));
+}
+
 function renderEquipmentCards(rows: EquipmentRecord[]): string {
   const counts = rows.reduce<Record<string, number>>((acc, row) => {
     acc[row.status] = (acc[row.status] ?? 0) + 1;
@@ -1248,6 +1398,9 @@ function renderEquipmentPriority(rows: EquipmentRecord[]): string {
             <span class="priority-card__value ${row.status === 'ALARM' ? 'tone-danger' : 'tone-warning'}">${row.vibMax.toFixed(2)}</span>
           </div>
           <div class="priority-card__meta">${escapeHtml(row.unit)} | ${escapeHtml(row.status)}</div>
+          <div class="priority-card__actions">
+            <button type="button" class="ghost-btn ghost-btn--small eq-action-btn" data-action="focus-equipment-sim" data-eq="${equipmentPayload(row)}">Set ke 3D</button>
+          </div>
         </div>
       `,
     )
@@ -1258,7 +1411,7 @@ function renderEquipmentTable(rows: EquipmentRecord[]): string {
   if (!rows.length) {
     return `
       <tr>
-        <td colspan="7" class="table-empty">Tidak ada data untuk tanggal/filter ini.</td>
+        <td colspan="8" class="table-empty">Tidak ada data untuk tanggal/filter ini.</td>
       </tr>
     `;
   }
@@ -1270,6 +1423,9 @@ function renderEquipmentTable(rows: EquipmentRecord[]): string {
       const hp = highestPoint(row);
       return `
         <tr>
+          <td>
+            <button type="button" class="ghost-btn ghost-btn--small eq-action-btn" data-action="focus-equipment-sim" data-eq="${equipmentPayload(row)}">Pilih</button>
+          </td>
           <td>${escapeHtml(row.unit)}</td>
           <td class="cell-strong">${escapeHtml(row.equipment)}</td>
           <td>${escapeHtml(row.group ?? '-')}</td>
@@ -1401,10 +1557,12 @@ function renderEquipmentView(state: AppState): string {
 
       <div class="panel view-card">
         <div class="panel-title">Equipment Table</div>
+        <div class="view-card__subtitle">Klik tombol <strong>Pilih</strong> atau <strong>Set ke 3D</strong> untuk mengirim equipment ke tab 3D Simulation.</div>
         <div class="table-shell">
           <table class="data-table">
             <thead>
               <tr>
+                <th>Action</th>
                 <th>Unit</th>
                 <th>Equipment</th>
                 <th>Group</th>
@@ -1480,8 +1638,10 @@ function renderReferenceView(): string {
 }
 
 function renderShell(state: AppState): string {
+  const densityClass = `app-shell--density-${state.uiDensity}`;
+  const textClass = state.uiTextCollapsed ? 'app-shell--text-collapsed' : '';
   return `
-    <div class="app-shell">
+    <div class="app-shell ${densityClass} ${textClass}">
       <aside class="sidebar" id="sidebarContent">
         ${renderSidebar(state)}
       </aside>
@@ -1512,6 +1672,67 @@ function showToast(message: string, tone: 'info' | 'warning' | 'error' = 'warnin
   toastTimer = window.setTimeout(() => {
     toast.classList.remove('is-visible');
   }, 4200);
+}
+
+function inferMachineTypeFromEquipmentName(name: string): MachineContext['machineType'] {
+  const value = name.toLowerCase();
+  if (/pump|cwp|pmp|impeller/.test(value)) return 'pump';
+  if (/fan|blower|idf|fdf/.test(value)) return 'fan';
+  if (/compress/.test(value)) return 'compressor';
+  if (/gear|gbx|reducer/.test(value)) return 'gearbox';
+  if (/turbine/.test(value)) return 'turbine';
+  return 'motor';
+}
+
+function decodeEquipmentPayload(raw: string | undefined): { equipment: string; unit: string; status: string; vibMax: number } | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw)) as { equipment?: string; unit?: string; status?: string; vibMax?: number };
+    if (!parsed.equipment || !parsed.unit) {
+      return null;
+    }
+    return {
+      equipment: String(parsed.equipment),
+      unit: String(parsed.unit),
+      status: String(parsed.status ?? ''),
+      vibMax: Number(parsed.vibMax ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function focusEquipmentToSimulation(payload: string | undefined): void {
+  const equipment = decodeEquipmentPayload(payload);
+  if (!equipment) {
+    return;
+  }
+
+  const machineType = inferMachineTypeFromEquipmentName(equipment.equipment);
+  const mappedFault: FaultKey =
+    equipment.status === 'ALARM' ? 'bearing'
+      : equipment.status === 'WARNING' || equipment.status === 'PREWARNING' ? 'misalignment'
+        : 'normal';
+
+  state.machineContext = {
+    ...state.machineContext,
+    equipmentCode: `${equipment.unit}-${equipment.equipment.slice(0, 12).replace(/\s+/g, '-')}`.toUpperCase(),
+    equipmentName: equipment.equipment,
+    machineType,
+    drivenComponent: machineType,
+    sourceUploadName: `Equipment Dashboard (${equipment.status})`,
+    notes: `Dipilih dari Equipment Dashboard | Status: ${equipment.status} | Vib Max: ${equipment.vibMax.toFixed(2)} mm/s`,
+  };
+  state.faultKey = mappedFault;
+  state.currentTab = 'sim';
+  persistAppState(state);
+  renderAllSections();
+  void ensureVisualControllers().then(() => {
+    controllers?.three.resize();
+    controllers?.three.resetCamera();
+    controllers?.charts.resize();
+  });
+  showToast(`${equipment.equipment} diterapkan ke 3D Simulation.`, 'info');
 }
 
 function syncSidebar(): void {
@@ -1818,7 +2039,29 @@ function syncTabVisibility(): void {
   });
 }
 
+function syncShellPresentation(): void {
+  const shell = qs<HTMLElement>('.app-shell');
+  if (shell) {
+    shell.classList.remove('app-shell--density-compact', 'app-shell--density-normal', 'app-shell--density-large', 'app-shell--text-collapsed');
+    shell.classList.add(`app-shell--density-${state.uiDensity}`);
+    if (state.uiTextCollapsed) {
+      shell.classList.add('app-shell--text-collapsed');
+    }
+  }
+
+  const densityButton = qs<HTMLButtonElement>('[data-action="toggle-ui-density"]');
+  const textButton = qs<HTMLButtonElement>('[data-action="toggle-ui-text"]');
+  if (densityButton) {
+    const label = state.uiDensity === 'compact' ? 'Compact' : state.uiDensity === 'large' ? 'Large' : 'Normal';
+    densityButton.textContent = `Size ${label}`;
+  }
+  if (textButton) {
+    textButton.textContent = state.uiTextCollapsed ? 'Show Text' : 'Hide Text';
+  }
+}
+
 function renderAllSections(): void {
+  syncShellPresentation();
   syncSidebar();
   syncSimView();
   renderAnalysisResultsPanel();
@@ -1910,8 +2153,7 @@ async function persistAnalysisRemote(entry: HistoryEntry, peaks: Array<{ order: 
     return;
   }
 
-  const { data: sessionData } = await client.auth.getSession();
-  const userId = sessionData.session?.user.id;
+  const userId = await getSignedInUserId(client);
   if (!userId) {
     return;
   }
@@ -1955,14 +2197,17 @@ async function syncUploadsToSupabase(assets: UploadedAsset[]): Promise<void> {
     return;
   }
 
-  const { data: sessionData } = await client.auth.getSession();
-  const userId = sessionData.session?.user.id;
+  const userId = await getSignedInUserId(client);
   if (!userId) {
     return;
   }
 
   for (const asset of assets) {
     if (!(asset.file instanceof File)) {
+      continue;
+    }
+
+    if (validateUploadFile(asset.file)) {
       continue;
     }
 
@@ -2000,15 +2245,45 @@ async function syncUploadsToSupabase(assets: UploadedAsset[]): Promise<void> {
 }
 
 function addUploads(fileList: FileList | null): void {
-  const files = Array.from(fileList ?? []).filter((file) =>
-    file.type.startsWith('image/') || /\.(csv|txt)$/i.test(file.name),
-  );
+  const candidates = Array.from(fileList ?? []);
+  if (!candidates.length) {
+    return;
+  }
+
+  const remainingSlots = MAX_UPLOAD_COUNT - state.uploadedAssets.length;
+  if (remainingSlots <= 0) {
+    showToast(`Maksimal ${MAX_UPLOAD_COUNT} file upload per sesi. Hapus beberapa file dulu.`, 'warning');
+    return;
+  }
+
+  const validFiles: File[] = [];
+  const rejectedFiles: string[] = [];
+  for (const file of candidates) {
+    const error = validateUploadFile(file);
+    if (error) {
+      rejectedFiles.push(`${file.name}: ${error}`);
+      continue;
+    }
+    validFiles.push(file);
+  }
+
+  const files = validFiles.slice(0, remainingSlots);
+  if (rejectedFiles.length) {
+    const suffix = rejectedFiles.length > 1 ? ` (+${rejectedFiles.length - 1} file lain)` : '';
+    showToast(`${rejectedFiles[0]}${suffix}`, 'warning');
+  }
+  if (validFiles.length > remainingSlots) {
+    showToast(`Hanya ${remainingSlots} file yang ditambahkan. Batas upload adalah ${MAX_UPLOAD_COUNT} file.`, 'warning');
+  }
   if (!files.length) {
     return;
   }
 
   files.forEach((file) => {
     const reader = new FileReader();
+    reader.onerror = () => {
+      showToast(`Gagal membaca file ${file.name}.`, 'error');
+    };
     reader.onload = (event) => {
       const isImage = file.type.startsWith('image/');
       const src = isImage ? String(event.target?.result ?? '') : nonImagePreview(file.name);
@@ -2016,7 +2291,7 @@ function addUploads(fileList: FileList | null): void {
       const extractedPeaks = isImage ? [] : parseTabularPeaks(String(event.target?.result ?? ''));
       state.uploadedAssets.push({
         id: Number(cryptoId().replace(/\D/g, '').slice(0, 12)) || Date.now(),
-        name: file.name,
+        name: file.name.trim().slice(0, 120) || 'uploaded-file',
         src,
         type,
         bearing: pendingUploadPreset?.bearing ?? guessBearing(file.name),
@@ -2027,6 +2302,7 @@ function addUploads(fileList: FileList | null): void {
         extractedPeaks,
         extractionConfidence: isImage ? 0 : extractedPeaks.length ? 95 : 0,
         extractionConfidenceLabel: isImage ? 'low' : extractedPeaks.length ? 'high' : 'low',
+        extractionSource: 'local',
         parseError: isImage || extractedPeaks.length ? undefined : 'CSV/TXT tidak memiliki dua kolom numerik frequency/time dan amplitude.',
       } as UploadedAsset & { file: File });
       persistAppState(state);
@@ -2041,41 +2317,6 @@ function addUploads(fileList: FileList | null): void {
   pendingUploadPreset = null;
 }
 
-function guessDataType(name: string): UploadedAsset['type'] {
-  const value = name.toLowerCase();
-  if (value.includes('env')) return 'Envelope';
-  if (value.includes('wave') || value.includes('time') || value.endsWith('.csv')) return 'Waveform';
-  return 'Spectrum';
-}
-
-function guessDirection(name: string): UploadedAsset['direction'] {
-  const value = name.toLowerCase();
-  if (/\b(a|ax|axial)\b/.test(value)) return 'axial';
-  if (/\b(h|hor|horizontal)\b/.test(value)) return 'horizontal';
-  if (/\b(v|ver|vertical)\b/.test(value)) return 'vertical';
-  return 'radial';
-}
-
-function nonImagePreview(name: string): string {
-  const safe = encodeURIComponent(name.slice(0, 24));
-  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='400'%3E%3Crect width='640' height='400' fill='%23060c16'/%3E%3Ctext x='50%25' y='46%25' text-anchor='middle' fill='%2367e8f9' font-family='monospace' font-size='34'%3EDATA FILE%3C/text%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' fill='%238ea0c3' font-family='monospace' font-size='18'%3E${safe}%3C/text%3E%3C/svg%3E`;
-}
-
-function guessBearing(name: string): '1' | '2' | '3' | '4' {
-  const value = name.toLowerCase();
-  const match = value.match(/(?:bearing|brg|br|b)[\s_-]*([1-4])|(?:de|nde|inboard|outboard)/);
-  if (!match) {
-    return '1';
-  }
-  if (match[1]) {
-    return match[1] as '1' | '2' | '3' | '4';
-  }
-  if (value.includes('nde') || value.includes('outboard')) {
-    return '2';
-  }
-  return '1';
-}
-
 function updateUploadAsset(id: number, field: keyof UploadedAsset, value: string): void {
   state.uploadedAssets = state.uploadedAssets.map((asset) =>
     asset.id === id
@@ -2084,6 +2325,7 @@ function updateUploadAsset(id: number, field: keyof UploadedAsset, value: string
           [field]: value,
           calibration: field === 'type' ? defaultPlotCalibration(value as UploadedAsset['type']) : asset.calibration,
           extractionStatus: field === 'type' && asset.src.startsWith('data:image/') ? 'pending' : asset.extractionStatus,
+          extractionSource: 'local',
         } as UploadedAsset)
       : asset,
   );
@@ -2103,10 +2345,11 @@ function updateExtractionCalibration(target: HTMLElement): void {
     if (asset.id !== id) return asset;
     const calibration = { ...(asset.calibration ?? defaultPlotCalibration(asset.type)), [field]: value };
     return {
-      ...asset,
-      calibration,
-      extractionStatus: asset.src.startsWith('data:image/') ? 'pending' : asset.extractionStatus,
-    };
+          ...asset,
+          calibration,
+          extractionStatus: asset.src.startsWith('data:image/') ? 'pending' : asset.extractionStatus,
+          extractionSource: 'local',
+        };
   });
   persistAppState(state);
 }
@@ -2128,10 +2371,12 @@ function updateExtractedPeak(target: HTMLElement): void {
             peak.id === peakId ? { ...peak, [field]: value, confidence: Math.max(peak.confidence, 55) } : peak,
           ),
           extractionStatus: 'extracted',
+          extractionSource: 'manual-corrected',
         }
       : asset,
   );
   persistAppState(state);
+  renderUploadPanel();
 }
 
 async function extractUpload(uploadId: number, render = true): Promise<void> {
@@ -2147,7 +2392,7 @@ async function extractUpload(uploadId: number, render = true): Promise<void> {
     renderUploadPanel();
   }
   const extracted = await extractImageDataFromAsset(asset);
-  state.uploadedAssets = state.uploadedAssets.map((item) => (item.id === uploadId ? extracted : item));
+  state.uploadedAssets = state.uploadedAssets.map((item) => (item.id === uploadId ? { ...extracted, extractionSource: 'local' } : item));
   persistAppState(state);
   if (render) {
     renderUploadPanel();
@@ -2201,8 +2446,10 @@ function resetUploads(): void {
 
 async function generateReport(): Promise<void> {
   const summary = state.diagnosisSummary;
-  const markers = frequencyMarkers(state.machineContext);
-  const peaks = buildPeakInsights(currentPeakValues(), state.machineContext);
+  const insights = buildReportInsightsFromRows(state.peakRows, state.machineContext);
+  const markers = insights.markers;
+  const peaks = insights.peaks;
+  const priorityRows = summary ? priorityBreakdownRows(summary) : [];
   const { jsPDF, autoTable } = await loadPdfTools();
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const margin = 40;
@@ -2210,7 +2457,7 @@ async function generateReport(): Promise<void> {
   doc.rect(0, 0, 595, 92, 'F');
   doc.setTextColor(232, 255, 251);
   doc.setFontSize(18);
-  doc.text('Mobius Vibration PDM Report', margin, 42);
+  doc.text('Mobius Simulation PDM Report', margin, 42);
   doc.setFontSize(10);
   doc.setTextColor(177, 205, 214);
   doc.text(`${state.machineContext.equipmentCode} | ${state.machineContext.equipmentName}`, margin, 62);
@@ -2233,7 +2480,7 @@ async function generateReport(): Promise<void> {
     headStyles: { fillColor: [16, 56, 70], textColor: [232, 255, 251] },
   });
 
-  let y = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 250;
+  let y = (doc as typeof doc & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 250;
   const firstImage = state.uploadedAssets.find((asset) => asset.src.startsWith('data:image/'));
   if (firstImage) {
     y += 20;
@@ -2278,6 +2525,7 @@ async function generateReport(): Promise<void> {
       ['Secondary Fault', summary?.secondaryFault ?? '-'],
       ['Confidence', summary ? `${summary.confidence.toFixed(0)}%` : '-'],
       ['Priority', summary ? `${summary.priorityScore}/100 ${summary.priorityLevel}` : '-'],
+      ['Priority Breakdown', priorityRows.length ? priorityRows.map((item) => `${item.label}: ${item.value} (${item.hint})`).join('\n') : '-'],
       ['Evidence', (summary?.evidence ?? ['Run analysis first.']).join('\n')],
       ['Recommended Action', (summary?.recommendedActions ?? ['Run analysis first.']).map((item, index) => `${index + 1}. ${item}`).join('\n')],
       ['Analyst Notes', state.machineContext.notes],
@@ -2296,30 +2544,14 @@ async function persistReportRemote(fileName: string, reportType: 'pdf' | 'excel'
   if (!client || !isSupabaseConfigured()) {
     return;
   }
-  const { data: sessionData } = await client.auth.getSession();
-  const userId = sessionData.session?.user.id;
+  const userId = await getSignedInUserId(client);
   if (!userId) {
     return;
   }
   await client.from('reports').insert({
     report_type: reportType,
     file_name: fileName,
-    payload: {
-      context: state.machineContext,
-      markers: frequencyMarkers(state.machineContext),
-      peaks: buildPeakInsights(currentPeakValues(), state.machineContext),
-      diagnosis: state.diagnosisSummary,
-      uploads: state.uploadedAssets.map((asset) => ({
-        name: asset.name,
-        type: asset.type,
-        bearing: asset.bearing,
-        direction: asset.direction,
-        extractionStatus: asset.extractionStatus,
-        calibration: asset.calibration,
-        extractedPeaks: asset.extractedPeaks,
-        extractionConfidence: asset.extractionConfidence,
-      })),
-    },
+    payload: buildReportPayloadFromRows(state.peakRows, state.machineContext, state.diagnosisSummary, state.uploadedAssets),
     created_by: userId,
   });
 }
@@ -2327,28 +2559,7 @@ async function persistReportRemote(fileName: string, reportType: 'pdf' | 'excel'
 async function exportCsv(): Promise<void> {
   const XLSX = await loadXlsxTools();
   const workbook = XLSX.utils.book_new();
-  const peakRows = buildPeakInsights(currentPeakValues(), state.machineContext).map((row) => ({
-    Rank: row.rank,
-    'Frequency Hz': row.frequency,
-    'Amplitude mm/s': row.amplitude,
-    'Possible Source': row.possibleSource,
-  }));
-  const markerRows = frequencyMarkers(state.machineContext).map((marker) => ({
-    Marker: marker.label,
-    'Frequency Hz': marker.freq ?? '',
-    Source: marker.source,
-  }));
-  const uploadRows = state.uploadedAssets.flatMap((asset) =>
-    (asset.extractedPeaks ?? []).map((peak) => ({
-      File: asset.name,
-      Point: `B${asset.bearing}`,
-      Direction: asset.direction,
-      Type: asset.type,
-      Frequency: peak.frequency,
-      Amplitude: peak.amplitude,
-      Confidence: peak.confidence,
-    })),
-  );
+  const { peakRows, markerRows, uploadRows } = buildWorkbookRowsFromUploads(state.peakRows, state.machineContext, state.uploadedAssets);
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(peakRows), 'Peak Table');
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(markerRows), 'Markers');
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(uploadRows), 'Extracted Uploads');
@@ -2374,17 +2585,10 @@ async function startAIAnalysis(): Promise<void> {
   }
 
   renderAIStateModal(true);
-  const steps = [
-    `Loading ${state.uploadedAssets.length} image data...`,
-    'Classifying spectrum and waveform...',
-    'Mapping data to bearing position...',
-    'Detecting spectrum grid lines...',
-    'Extracting signal trace...',
-    'Identifying peak frequencies...',
-    'Calculating harmonic ratios...',
-    'Matching against Mobius library...',
-    'Finalizing diagnosis...',
-  ];
+  const providerReady = isAiProviderReady(state.aiProviderSettings);
+  const steps = providerReady
+    ? [...buildAiProcessingSteps(state.uploadedAssets.length), 'Calling configured AI vision provider...', 'Merging AI and local extraction...']
+    : buildAiProcessingSteps(state.uploadedAssets.length);
 
   const modalProgress = qs<HTMLElement>('#modalProgressModal');
   const modalText = qs<HTMLElement>('#modalScanTextModal');
@@ -2392,86 +2596,103 @@ async function startAIAnalysis(): Promise<void> {
     return;
   }
 
-  await extractAllUploads(false);
-  await syncUploadsToSupabase(state.uploadedAssets).catch(() => undefined);
+  try {
+    await extractAllUploads(false);
+    await syncUploadsToSupabase(state.uploadedAssets).catch(() => undefined);
 
-  for (let index = 0; index < steps.length; index += 1) {
-    modalText.textContent = steps[index];
-    modalProgress.style.width = `${((index + 1) / steps.length) * 100}%`;
-    // eslint-disable-next-line no-await-in-loop
-    await wait(220);
+    for (let index = 0; index < steps.length; index += 1) {
+      modalText.textContent = steps[index];
+      modalProgress.style.width = `${((index + 1) / steps.length) * 100}%`;
+      // eslint-disable-next-line no-await-in-loop
+      await wait(220);
+    }
+
+    let aiMerge = mergeAiVisionResultWithUploads(state.uploadedAssets, null);
+    let contextForAnalysis = state.machineContext;
+    if (providerReady) {
+      try {
+        state.aiProviderSettings = {
+          ...state.aiProviderSettings,
+          status: 'running',
+          message: 'Calling configured AI vision provider...',
+        };
+        persistAppState(state);
+        const aiResult = await requestAiVisionAnalysis(state.aiProviderSettings, state.uploadedAssets, state.machineContext);
+        aiMerge = mergeAiVisionResultWithUploads(state.uploadedAssets, aiResult);
+        contextForAnalysis = aiResult.machineContext
+          ? normalizeMachineContext({ ...state.machineContext, ...aiResult.machineContext }, state.machineContext)
+          : state.machineContext;
+        state.aiProviderSettings = {
+          ...state.aiProviderSettings,
+          status: 'ready',
+          message: `AI assist completed with ${aiResult.provider}. Review peaks before final report.`,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'AI provider failed.';
+        state.aiProviderSettings = {
+          ...state.aiProviderSettings,
+          status: 'error',
+          message: `${message} Local extraction was used instead.`,
+        };
+        showToast('AI provider gagal. Diagnosis memakai ekstraksi lokal.', 'warning');
+      }
+    } else if (state.aiProviderSettings.enabled) {
+      state.aiProviderSettings = {
+        ...state.aiProviderSettings,
+        status: 'error',
+        message: 'Isi endpoint dan API key untuk mengaktifkan AI assist. Local extraction was used.',
+      };
+      showToast('AI provider belum lengkap. Diagnosis memakai ekstraksi lokal.', 'warning');
+    }
+
+    state.uploadedAssets = aiMerge.uploads;
+    const { finalResult, analysisRows, analysisPeaks, extractedResults, penalty, lowConfidenceUploads } = runAiUploadAnalysis(
+      state.uploadedAssets,
+      state.rpm,
+      contextForAnalysis,
+    );
+    const totalPenalty = penalty + aiMerge.confidencePenalty;
+    state.uploadResult = {
+      ...finalResult,
+      confidence: Math.max(20, finalResult.confidence - aiMerge.confidencePenalty),
+      evidence: [...finalResult.evidence, ...aiMerge.evidence],
+    };
+    state.machineContext = state.uploadResult.machineContext;
+    state.rpm = state.uploadResult.machineContext.rpm;
+    state.load = state.uploadResult.machineContext.load;
+    state.direction = mapMeasurementDirection(state.uploadResult.machineContext.direction);
+    state.analysisRpm = state.uploadResult.machineContext.rpm;
+    state.analysisDirection = mapMeasurementDirection(state.uploadResult.machineContext.direction);
+    state.peakRows = analysisRows;
+    state.analysisResults = extractedResults;
+    state.diagnosisSummary = buildDiagnosisSummary(
+      analysisPeaks,
+      extractedResults,
+      state.uploadResult.machineContext,
+    );
+    state.diagnosisSummary.confidence = Math.max(20, state.diagnosisSummary.confidence - totalPenalty);
+    if (lowConfidenceUploads.length) {
+      state.diagnosisSummary.evidence = [
+        ...state.diagnosisSummary.evidence,
+        'Some uploaded photos need manual calibration; diagnosis confidence was reduced.',
+      ];
+    }
+    if (aiMerge.confidencePenalty) {
+      state.diagnosisSummary.evidence = [
+        ...state.diagnosisSummary.evidence,
+        'AI and local extraction disagreed on at least one dominant peak; review manual corrections before final report.',
+      ];
+    }
+    persistAppState(state);
+    renderUploadPanel();
+
+    const historyEntry = seedHistoryEntry('ai', state.uploadResult.faultKey, state.rpm, state.uploadResult.machineContext.direction, state.uploadResult.confidence, state.uploadResult.evidence.map((item) => `${item.label}: ${item.value}`));
+    state.history = appendHistory(historyEntry);
+    renderAllSections();
+    persistAnalysisRemote(historyEntry, []).catch(() => undefined);
+  } finally {
+    renderAIStateModal(false);
   }
-
-  const result = inferUploadFault(state.uploadedAssets, state.rpm, state.machineContext);
-  const extractedRows = mergeExtractedPeaksToRows(state.uploadedAssets);
-  const analysisRows = extractedRows.length ? extractedRows : result.recommendedPeaks;
-  const analysisPeaks = currentPeakValuesFromRows(analysisRows);
-  const penalty = extractionConfidencePenalty(state.uploadedAssets);
-  const extractedResults = rankSpectrumPeaks(
-    analysisPeaks,
-    result.machineContext.rpm,
-    mapMeasurementDirection(result.machineContext.direction),
-    result.machineContext,
-  );
-  const topFault = extractedResults[0]?.key ?? result.faultKey;
-  const lowConfidenceUploads = state.uploadedAssets.filter((asset) => asset.extractionStatus === 'needs-calibration' || asset.extractionStatus === 'failed');
-  const extractionEvidence = [
-    ...result.evidence,
-    {
-      label: 'Extracted Peaks',
-      value: `${analysisPeaks.length} peak(s) from photo/CSV`,
-      match: extractedRows.length > 0,
-    },
-    {
-      label: 'Extraction Confidence',
-      value: `${Math.max(0, 100 - penalty * 3).toFixed(0)}% quality gate`,
-      match: penalty <= 12,
-    },
-    ...(lowConfidenceUploads.length
-      ? [{
-          label: 'Manual Calibration',
-          value: `${lowConfidenceUploads.length} file(s) need review`,
-          match: false,
-        }]
-      : []),
-  ];
-  const finalResult = {
-    ...result,
-    faultKey: topFault,
-    confidence: Math.max(20, Math.min(result.confidence, extractedResults[0]?.confidence ?? result.confidence) - penalty),
-    evidence: extractionEvidence,
-    recommendedPeaks: analysisRows,
-  };
-  state.uploadResult = result;
-  state.uploadResult = finalResult;
-  state.machineContext = finalResult.machineContext;
-  state.rpm = finalResult.machineContext.rpm;
-  state.load = finalResult.machineContext.load;
-  state.direction = mapMeasurementDirection(finalResult.machineContext.direction);
-  state.analysisRpm = finalResult.machineContext.rpm;
-  state.analysisDirection = mapMeasurementDirection(finalResult.machineContext.direction);
-  state.peakRows = analysisRows;
-  state.analysisResults = extractedResults;
-  state.diagnosisSummary = buildDiagnosisSummary(
-    analysisPeaks,
-    extractedResults,
-    finalResult.machineContext,
-  );
-  state.diagnosisSummary.confidence = Math.max(20, state.diagnosisSummary.confidence - penalty);
-  if (lowConfidenceUploads.length) {
-    state.diagnosisSummary.evidence = [
-      ...state.diagnosisSummary.evidence,
-      'Some uploaded photos need manual calibration; diagnosis confidence was reduced.',
-    ];
-  }
-  persistAppState(state);
-  renderUploadPanel();
-
-  const historyEntry = seedHistoryEntry('ai', finalResult.faultKey, state.rpm, finalResult.machineContext.direction, finalResult.confidence, finalResult.evidence.map((item) => `${item.label}: ${item.value}`));
-  state.history = appendHistory(historyEntry);
-  renderAllSections();
-  persistAnalysisRemote(historyEntry, []).catch(() => undefined);
-  renderAIStateModal(false);
 }
 
 function applyAIResult(): void {
@@ -2487,25 +2708,9 @@ function applyAIResult(): void {
   state.analysisRpm = state.machineContext.rpm;
   state.analysisDirection = mapMeasurementDirection(state.machineContext.direction);
   state.peakRows = state.uploadResult.recommendedPeaks;
-  state.analysisResults = rankSpectrumPeaks(
-    state.peakRows.map((row) => ({
-      order: row.order,
-      freq: Number.parseFloat(row.freq),
-      amp: Number.parseFloat(row.amp),
-    })),
-    state.analysisRpm,
-    state.analysisDirection,
-    state.machineContext,
-  );
-  state.diagnosisSummary = buildDiagnosisSummary(
-    state.peakRows.map((row) => ({
-      order: row.order,
-      freq: Number.parseFloat(row.freq),
-      amp: Number.parseFloat(row.amp),
-    })),
-    state.analysisResults,
-    state.machineContext,
-  );
+  const recommendedPeaks = parsePeakInputRows(state.peakRows);
+  state.analysisResults = rankSpectrumPeaks(recommendedPeaks, state.analysisRpm, state.analysisDirection, state.machineContext);
+  state.diagnosisSummary = buildDiagnosisSummary(recommendedPeaks, state.analysisResults, state.machineContext);
   state.currentTab = 'sim';
   state.uploadResult = null;
   persistAppState(state);
@@ -2521,72 +2726,12 @@ function wait(ms: number): Promise<void> {
 }
 
 function refreshConnectionState(): void {
-  const client = getSupabaseClient();
-  if (!client) {
-    state.connection = {
-      ...state.connection,
-      ready: true,
-      configured: false,
-      mode: 'demo',
-      email: null,
-      role: 'guest',
-      message: 'Demo mode. Tambahkan Supabase env untuk aktifkan auth, storage, dan histori cloud.',
-    };
-    renderAllSections();
-    return;
-  }
-
   void (async () => {
-    const { data, error } = await client.auth.getSession();
-    if (error) {
-      state.connection = {
-        ...state.connection,
-        ready: true,
-        configured: true,
-        mode: 'error',
-        email: null,
-        role: 'guest',
-        message: error.message,
-      };
-      renderAllSections();
-      return;
-    }
-
-    const session = data.session;
-    if (!session?.user) {
-      state.connection = {
-        ...state.connection,
-        ready: true,
-        configured: true,
-        mode: 'signed-out',
-        email: null,
-        role: 'guest',
-        message: 'Belum login. Gunakan form auth untuk sinkronisasi cloud.',
-      };
-      renderAllSections();
-      return;
-    }
-
-    const profile = await client
-      .from('users')
-      .select('display_name, role_name')
-      .eq('id', session.user.id)
-      .maybeSingle();
-
-    const role = (profile.data?.role_name ?? 'technician') as AppState['connection']['role'];
-    state.connection = {
-      ...state.connection,
-      ready: true,
-      configured: true,
-      mode: 'signed-in',
-      email: session.user.email ?? null,
-      role,
-      message: profile.data?.display_name
-        ? `Signed in as ${profile.data.display_name}`
-        : `Signed in as ${session.user.email ?? 'unknown user'}`,
-    };
+    state.connection = await fetchAuthConnectionState();
     renderAllSections();
-    syncRemoteHistory().catch(() => undefined);
+    if (state.connection.mode === 'signed-in') {
+      syncRemoteHistory().catch(() => undefined);
+    }
   })();
 }
 
@@ -2596,8 +2741,7 @@ async function syncRemoteHistory(): Promise<void> {
     return;
   }
 
-  const { data: sessionData } = await client.auth.getSession();
-  const userId = sessionData.session?.user.id;
+  const userId = await getSignedInUserId(client);
   if (!userId) {
     return;
   }
@@ -2648,17 +2792,12 @@ async function signInWithEmail(): Promise<void> {
     return;
   }
 
-  const client = getSupabaseClient();
-  if (!client) {
-    return;
-  }
-
-  const { error } = await client.auth.signInWithPassword({ email, password });
+  const { error } = await signInWithPassword(email, password);
   if (error) {
     state.connection = {
       ...state.connection,
       mode: 'error',
-      message: error.message,
+      message: error,
     };
     renderAllSections();
     return;
@@ -2668,12 +2807,7 @@ async function signInWithEmail(): Promise<void> {
 }
 
 async function signOut(): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client) {
-    return;
-  }
-
-  await client.auth.signOut();
+  await signOutSession();
   refreshConnectionState();
 }
 
@@ -2816,6 +2950,28 @@ function syncUploadInputState(target: HTMLElement): void {
   updateUploadAsset(id, field, (target as HTMLSelectElement).value);
 }
 
+function updateAiProviderSetting(target: HTMLElement): void {
+  const field = target.dataset.aiProviderField as keyof AppState['aiProviderSettings'] | undefined;
+  if (!field) {
+    return;
+  }
+
+  const current = state.aiProviderSettings;
+  const value = field === 'enabled'
+    ? (target as HTMLInputElement).checked
+    : (target as HTMLInputElement).value;
+  state.aiProviderSettings = {
+    ...current,
+    [field]: value,
+    status: field === 'enabled' && !value ? 'idle' : isAiProviderReady({ ...current, [field]: value }) ? 'ready' : 'idle',
+    message: field === 'enabled' && !value
+      ? 'AI assist disabled. Local extraction is active.'
+      : 'Provider settings are stored locally in this browser.',
+  };
+  persistAppState(state);
+  renderUploadPanel();
+}
+
 function syncSimButtons(): void {
   const faultButtons = qsa<HTMLButtonElement>('#faultGrid .fault-btn');
   faultButtons.forEach((button) => {
@@ -2825,6 +2981,14 @@ function syncSimButtons(): void {
   const directionButtons = qsa<HTMLButtonElement>('#directionGrid .direction-btn');
   directionButtons.forEach((button) => {
     button.classList.toggle('is-active', button.dataset.direction === state.direction);
+  });
+
+  const currentLayout = state.machineContext.machineType === 'motor' && state.machineContext.drivenComponent === 'motor'
+    ? 'motor'
+    : state.machineContext.drivenComponent;
+  const layoutButtons = qsa<HTMLButtonElement>('#machineLayoutGrid .layout-btn');
+  layoutButtons.forEach((button) => {
+    button.classList.toggle('is-active', button.dataset.layout === currentLayout);
   });
 }
 
@@ -2885,6 +3049,29 @@ function bindEvents(root: HTMLElement): void {
         }
         break;
       }
+      case 'set-machine-layout': {
+        const layout = actionTarget.dataset.layout as MachineContext['machineType'] | undefined;
+        if (layout) {
+          const isMotorOnly = layout === 'motor';
+          state.machineContext = {
+            ...state.machineContext,
+            machineType: layout,
+            drivenComponent: layout,
+            driveType: isMotorOnly ? 'direct' : state.machineContext.driveType,
+            couplingType: isMotorOnly ? 'direct' : state.machineContext.couplingType,
+            bearingPosition: isMotorOnly ? 'DE' : state.machineContext.bearingPosition,
+          };
+          persistAppState(state);
+          syncSidebar();
+          syncSimView();
+          syncSimButtons();
+          void ensureVisualControllers().then(() => {
+            controllers?.three.resize();
+            controllers?.three.resetCamera();
+          });
+        }
+        break;
+      }
       case 'reset-camera':
         void ensureVisualControllers().then(() => controllers?.three.resetCamera());
         break;
@@ -2892,6 +3079,24 @@ function bindEvents(root: HTMLElement): void {
         state.wireframe = !state.wireframe;
         persistAppState(state);
         void ensureVisualControllers().then(() => controllers?.three.toggleWireframe());
+        break;
+      case 'toggle-ui-density': {
+        state.uiDensity = state.uiDensity === 'normal' ? 'compact' : state.uiDensity === 'compact' ? 'large' : 'normal';
+        persistAppState(state);
+        renderAllSections();
+        void ensureVisualControllers().then(() => {
+          controllers?.three.resize();
+          controllers?.charts.resize();
+        });
+        break;
+      }
+      case 'toggle-ui-text':
+        state.uiTextCollapsed = !state.uiTextCollapsed;
+        persistAppState(state);
+        renderAllSections();
+        break;
+      case 'focus-equipment-sim':
+        focusEquipmentToSimulation(actionTarget.dataset.eq);
         break;
       case 'toggle-sim-flag': {
         const flag = actionTarget.dataset.simFlag as 'showOrbit' | 'showSensors' | 'showVectors' | undefined;
@@ -2963,8 +3168,9 @@ function bindEvents(root: HTMLElement): void {
         break;
       case 'use-detected-rpm':
         if (state.machineContext.detectedRpm) {
-          state.machineContext = { ...state.machineContext, rpmSource: 'detected', rpm: state.machineContext.detectedRpm };
-          state.rpm = state.machineContext.detectedRpm;
+          const detectedRpm = state.machineContext.detectedRpm;
+          state.machineContext = { ...state.machineContext, rpmSource: 'detected', rpm: detectedRpm };
+          state.rpm = detectedRpm;
           state.analysisRpm = state.rpm;
           persistAppState(state);
           renderAllSections();
@@ -3052,6 +3258,8 @@ function bindEvents(root: HTMLElement): void {
 
     if (target.dataset.simControl) {
       updateSimulationControl(target);
+    } else if (target.dataset.aiProviderField) {
+      updateAiProviderSetting(target);
     } else if (target.dataset.extractionField) {
       updateExtractionCalibration(target);
     } else if (target.dataset.extractedPeakField) {
@@ -3108,19 +3316,6 @@ function mountApp(root: HTMLElement): void {
   syncEquipmentView();
   syncTabVisibility();
   syncSimButtons();
-
-  controllers = {
-    three: mountThreeScene(qs<HTMLElement>('#canvas3d') ?? document.createElement('div'), () => state),
-    charts: mountChartPack(
-      {
-        waveCanvas: qs<HTMLCanvasElement>('#waveCanvas') ?? document.createElement('canvas'),
-        fftCanvas: qs<HTMLCanvasElement>('#fftCanvas') ?? document.createElement('canvas'),
-        phaseCanvas: qs<HTMLCanvasElement>('#phaseCanvas') ?? document.createElement('canvas'),
-        orbitCanvas: qs<HTMLCanvasElement>('#orbitCanvas') ?? document.createElement('canvas'),
-      },
-      () => state,
-    ),
-  };
 
   renderAnalysisPanel();
   renderUploadPanel();

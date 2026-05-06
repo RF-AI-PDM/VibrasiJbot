@@ -44,29 +44,29 @@ create policy "reports_select_owner_or_admin"
 on public.reports
 for select
 to authenticated
-using (created_by = auth.uid() or public.has_role(auth.uid(), array['supervisor', 'admin']));
+using (created_by = auth.uid() or public.has_any_role(array['supervisor', 'admin']));
 
 drop policy if exists "reports_insert_authenticated" on public.reports;
 create policy "reports_insert_authenticated"
 on public.reports
 for insert
 to authenticated
-with check (created_by = auth.uid() or public.has_role(auth.uid(), array['supervisor', 'admin']));
+with check (created_by = auth.uid() or public.has_any_role(array['supervisor', 'admin']));
 
 drop policy if exists "reports_update_owner_or_admin" on public.reports;
 create policy "reports_update_owner_or_admin"
 on public.reports
 for update
 to authenticated
-using (created_by = auth.uid() or public.has_role(auth.uid(), array['supervisor', 'admin']))
-with check (created_by = auth.uid() or public.has_role(auth.uid(), array['supervisor', 'admin']));
+using (created_by = auth.uid() or public.has_any_role(array['supervisor', 'admin']))
+with check (created_by = auth.uid() or public.has_any_role(array['supervisor', 'admin']));
 
 drop policy if exists "reports_delete_owner_or_admin" on public.reports;
 create policy "reports_delete_owner_or_admin"
 on public.reports
 for delete
 to authenticated
-using (created_by = auth.uid() or public.has_role(auth.uid(), array['supervisor', 'admin']));
+using (created_by = auth.uid() or public.has_any_role(array['supervisor', 'admin']));
 
 create index if not exists uploads_extraction_status_idx
 on public.uploads (extraction_status);

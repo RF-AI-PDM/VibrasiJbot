@@ -1,6 +1,6 @@
-# Mobius Vibration Simulator Pro
+# Mobius Simulation Dashboard
 
-Mobius Vibration Simulator Pro is a Vite + TypeScript web app for vibration diagnostics, spectrum analysis, and machine-condition reporting. It combines a 3D machine simulator, FFT/signal visualizations, AI-assisted image triage, an equipment dashboard, and a reference library for common fault patterns.
+Mobius Simulation Dashboard is a Vite + TypeScript web app for vibration diagnostics, spectrum analysis, and machine-condition reporting. It combines a 3D machine simulator, FFT/signal visualizations, AI-assisted image triage, an equipment dashboard, and a reference library for common fault patterns.
 
 ## Features
 
@@ -16,7 +16,7 @@ Mobius Vibration Simulator Pro is a Vite + TypeScript web app for vibration diag
   - Cavitation
   - Electrical fault
 - Spectrum peak entry and diagnosis scoring
-- AI Upload workflow for spectrum/waveform image extraction
+- Hybrid AI Upload workflow for spectrum/waveform image extraction, provider-neutral vision assist, and manual review
 - Equipment dashboard with trend and alarm summaries
 - Reference library mapped to Mobius fault guidance
 - PDF report export
@@ -83,6 +83,23 @@ When Supabase is enabled, the app expects these tables/features to exist based o
 - `analysis_results`
 - `reports`
 
+## Production AI Provider Proxy
+
+The in-browser AI Provider settings are useful for local demos. For production or shared use, deploy the included Supabase Edge Function proxy so third-party provider keys stay server-side:
+
+```bash
+supabase secrets set AI_PROVIDER_ENDPOINT="https://provider.example.com/vision"
+supabase secrets set AI_PROVIDER_API_KEY="provider-secret-key"
+supabase secrets set AI_PROVIDER_MODEL="vision-default"
+supabase functions deploy ai-vision-proxy
+```
+
+Then use the deployed function URL as the app's AI Provider endpoint:
+
+```text
+https://<project-ref>.functions.supabase.co/ai-vision-proxy
+```
+
 ## What the App Does
 
 ### 3D Simulation
@@ -95,7 +112,7 @@ The analysis tab accepts peak rows, ranks likely faults, and produces a diagnosi
 
 ### AI Upload
 
-The upload workflow can extract peaks from spectrum/waveform images, infer machine context from filenames and metadata, and apply the extracted results back into the analysis flow.
+The upload workflow can extract peaks from spectrum/waveform images, infer machine context from filenames and metadata, and apply the extracted results back into the analysis flow. In v1.1, AI assist can optionally call a user-configured provider endpoint from the browser; if the endpoint or key is missing or the request fails, the local extractor remains the fallback.
 
 ### Equipment Dashboard
 

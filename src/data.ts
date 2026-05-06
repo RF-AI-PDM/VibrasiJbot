@@ -285,8 +285,7 @@ function evaluateLiteral<T>(literal: string): T {
 }
 
 function sanitizeEquipmentRows(rows: EquipmentRecord[]): EquipmentRecord[] {
-  return rows
-    .map((row) => {
+  const sanitizedRows: Array<EquipmentRecord | null> = rows.map((row) => {
       const name = String(row.equipment ?? '').trim();
       if (!name || /^\d+$/.test(name)) {
         return null;
@@ -308,8 +307,9 @@ function sanitizeEquipmentRows(rows: EquipmentRecord[]): EquipmentRecord[] {
         vibMax,
         group: row.group ?? null,
       } satisfies EquipmentRecord;
-    })
-    .filter((row): row is EquipmentRecord => Boolean(row));
+    });
+
+  return sanitizedRows.filter((row): row is EquipmentRecord => row !== null);
 }
 
 const legacyScript = legacyHtml.slice(legacyHtml.lastIndexOf('<script>') + '<script>'.length, legacyHtml.lastIndexOf('</script>'));
